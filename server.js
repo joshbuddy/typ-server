@@ -2,14 +2,35 @@ const WebSocket = require("ws");
 const express = require("express");
 const http = require("http");
 const redis = require("redis");
-//const jwt = require("jsonwebtoken");
+const bodyParser = require('body-parser')
+const jwt = require("jsonwebtoken");
+
 //const enforce = require('express-sslify');
 
 module.exports = ({redis_url}) => {
   const app = express();
   const server = http.createServer(app);
 
-  app.get('/index', (req, res) => res.sendFile(''))
+  var pg = require('knex')({
+    client: 'pg',
+    connection: process.env.PG_CONNECTION_STRING,
+  })
+
+  app.use(bodyParser.json())
+
+  app.get('/', (req, res) => res.sendFile('index.html'))
+
+  app.post('/games', (req, res) => {
+    // make a new type of game
+  })
+
+  app.get('/games/:id/*', (req, res) => {
+    // get a resource in a game
+  })
+
+  app.post('/sessions', (req, res) => {
+    // make a new game session
+  })
 
   const verifyClient = async (info, verified) => {
     if (!info.req.headers.hasOwnProperty("authorization"))
