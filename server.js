@@ -3,33 +3,36 @@ const express = require("express");
 const http = require("http");
 const redis = require("redis");
 const bodyParser = require('body-parser')
-const jwt = require("jsonwebtoken");
-
-//const enforce = require('express-sslify');
+const jwt = require("jsonwebtoken")
+const path = require('path')
+const db = require('./models')
 
 module.exports = ({redis_url}) => {
   const app = express();
   const server = http.createServer(app);
 
-  var pg = require('knex')({
-    client: 'pg',
-    connection: process.env.PG_CONNECTION_STRING,
-  })
-
   app.use(bodyParser.json())
 
   app.get('/', (req, res) => res.sendFile('index.html'))
 
-  app.post('/games', (req, res) => {
-    // make a new type of game
+  app.post('/games', async (req, res) => {
+    const game = await db.Game.create({name, req.body.name, content: new Buffer(req.body.content, 'base64')})
+    res.json({id: game.id})
   })
 
   app.get('/games/:id/*', (req, res) => {
-    // get a resource in a game
+    res.sendFile(`${__dirname}/game/${req.params[0]}`)
   })
 
   app.post('/sessions', (req, res) => {
-    // make a new game session
+    const game = req.body.game
+    // find game object, or 400
+    // get id of game object, set it in new session
+    db.Session({creator: req.userId, game: game})
+  })
+
+  app.get('/sessions/:id', (req, res) => {
+    // get game session info
   })
 
   const verifyClient = async (info, verified) => {
@@ -45,17 +48,29 @@ module.exports = ({redis_url}) => {
   const onWssConnection = (ws, req) => {
     const channel = `game0`;
     const subscriber = redis.createClient(redis_url);
-    const gameClass = require('./gameInterface')
-    let gameInterface = new gameClass(req.userId)
+    const gameClass = require('./game/server.js')
+    let state = 'new'
+    let gameInterface = null
     let lastPlayerState = null
     subscriber.subscribe(channel);
 
     ws.on("message", data => {
-      gameInterface.receiveAction(JSON.parse(data))
-      const newPlayerState = gameInterface.getPlayerState()
-      if (newPlayerState !== lastPlayerState) {
-        lastPlayerState = newPlayerState
-        ws.send(JSON.stringify(lastPlayerState))
+      const message = JSON.parse(data)
+      switch(message.type) {
+        case 'joinGame':
+          gameInterface = new gameClass(req.userId)
+          break
+        case 'startGame':
+          gameInterface.start()
+          break
+        case 'action':
+          gameInterface.receiveAction(message)
+          const newPlayerState = gameInterface.getPlayerState()
+          if (newPlayerState !== lastPlayerState) {
+            lastPlayerState = newPlayerState
+            ws.send(JSON.stringify(lastPlayerState))
+          }
+          break
       }
     })
 
@@ -71,8 +86,10 @@ module.exports = ({redis_url}) => {
       throw error;
     });
 
+    // redis
     subscriber.on("message", (channel, message) => {
-      gameInterface.setState(JSON.parse(message))
+      JSON.parse(message)
+      gameInterface.setState()
     })
   }
 
