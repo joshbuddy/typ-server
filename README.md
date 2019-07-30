@@ -1,57 +1,79 @@
-init(player)
-setState(state) => bool:changed?
-getPlayerState() => playerState
-receiveAction(action) => state
+# Typ server
 
-todo
+## Routes
 
-[√] add a simple test
-[ ] add database
-[ ] need a real join/leave game protocol
+All endpoints use JSON encoded bodies
 
-    ## RESTful
+### POST `/users`
 
-    POST /games
-    body zip of bundled game
+Takes:
+* name
+* password
+* email
 
-    create game(type) => id (better as rest?)
+Creates a user. Returns 201 if successful
 
-    GET /games/:id/* (any resource bundled in the game)
+### POST `/login`
 
-    GET /sessions/:id
-    get db info about the game
-    {
-      players: [...'names']
-      state: started|in-progress|finished
-    }
+Takes:
+* name
+* password
 
-    POST /sessions (json)
-      {type}
+Returns {token: [jwt token]}
 
-    ## Websocket
+### POST `/games`
 
-    use JWT to authenticate
+Create a game
 
-    connect to /
+Takes:
+* name
+* content (base64 encoded zip file)
 
-    incoming
+### GET `/games/:id/*res`
 
-    ### Join a game
-    {type:"joinGame", id:"game id"}
+Gets a resource from the game
 
-    ### Start the game     start game // only the creator can do this
-    {type:"startGame"}
+### POST `/sessions`
 
-    ### Send a game action
-    {type:"action", body: {...action}}
+Creates a game session.
 
-    outgoing
+Takes:
+* name
 
-    ### Player joined
-    {type:"gameJoined", playerId:"some player id"}
+### GET `/sessions/:id`
 
-    ### Game started
-    {type:"gameStarted"}
+Gets information on a game session.
 
-    ### New state
-    {type:"playerState", state: {...state}}
+## WebSocket Protocol
+
+### Receieved messages
+
+Takes the structure of:
+
+`{type: [type], ...otherKeys}`
+
+#### joinGame
+
+Joins an existing session.
+
+Other Keys:
+* sessionId
+
+#### startGame
+
+Start a game session
+
+#### action
+
+Sends an action for the game
+
+Other keys:
+* action
+
+## Upload a game
+
+Use script
+`scripts/upload.js [name] [dir] [url]`
+
+### Sent messages
+
