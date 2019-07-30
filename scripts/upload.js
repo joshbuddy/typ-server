@@ -20,6 +20,8 @@ assert(fs.existsSync(source + '/server.js'), 'no server!')
 const zip = new AdmZip()
 zip.addLocalFolder(source, '/')
 const content = zip.toBuffer().toString("base64")
-const body = JSON.stringify({name, content})
 
-console.log(body)
+request.post(url, {json: {name, content}}, (error, response, body) => {
+  console.log("error", error)
+  console.log(body)
+})

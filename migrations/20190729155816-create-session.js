@@ -12,6 +12,10 @@ module.exports = {
         allowNull: false,
         type: Sequelize.INTEGER
       },
+      creator_id: {
+        allowNull: false,
+        type: Sequelize.INTEGER
+      },
       last_state: {
         allowNull: true,
         type: Sequelize.JSON

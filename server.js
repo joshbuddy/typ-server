@@ -6,6 +6,7 @@ const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const path = require('path')
 const mime = require('mime')
+const AdmZip = require('adm-zip')
 
 const db = require('./models')
 
@@ -60,17 +61,17 @@ module.exports = ({secretKey, redisUrl}) => {
 
   app.post('/games', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
-    const game = await db.Game.create({name: req.body.name, content: new Buffer(req.body.content, 'base64')})
+    const game = await db.Game.create({name: req.body.name, content: Buffer.from(req.body.content, 'base64')})
     res.json({id: game.id})
   })
 
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
-    const game = await db.Game.get(req.params.id)
+    const game = await db.Game.findByPk(req.params.id)
     const zip = new AdmZip(game.content)
     const buf = zip.readFile(req.params[0])
     res.type(mime.getType(req.params[0]))
-    res.sendFile(buf)
+    res.end(buf)
   })
 
   app.post('/sessions', async (req, res) => {
@@ -83,7 +84,7 @@ module.exports = ({secretKey, redisUrl}) => {
 
   app.get('/sessions/:id', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
-    const session = await db.Session.get(req.params.id)
+    const session = await db.Session.findByPk(req.params.id)
     res.json(session)
   })
 
@@ -137,7 +138,7 @@ module.exports = ({secretKey, redisUrl}) => {
       gameInterface.start()
       const state = gameInterface.getState()
       const tx = Sequelize.transaction()
-      const session = await db.Session.findById(sessionUser.session_id, {transaction: tx, lock: {of: db.Session}})
+      const session = await db.Session.findByPk(sessionUser.session_id, {transaction: tx, lock: {of: db.Session}})
       if (session.last_state) return
       gameInterface.startGame()
       session.last_state = gameInterface.getState()
@@ -146,7 +147,7 @@ module.exports = ({secretKey, redisUrl}) => {
 
     const gameAction = async (message) => {
       const tx = Sequelize.transaction()
-      const session = await db.Session.findById(sessionUser.session_id, {transaction: tx, lock: {of: db.Session}})
+      const session = await db.Session.findByPk(sessionUser.session_id, {transaction: tx, lock: {of: db.Session}})
       gameInterface.setState(session.last_state)
       gameInterface.receieveAction(message.action)
       session.last_state = gameInterface.getState()
@@ -181,7 +182,7 @@ module.exports = ({secretKey, redisUrl}) => {
 
     // redis
     subscriber.on("message", async (channel, message) => {
-      const session = await db.Session.findById(sessionUser.session_id)
+      const session = await db.Session.findByPk(sessionUser.session_id)
       gameInterface.setState(session.last_state)
       ws.send(JSON.stringify({type: playerState, state: gameInterface.getPlayerState()}))
     })
