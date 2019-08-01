@@ -1,11 +1,12 @@
 'use strict';
 module.exports = (sequelize, DataTypes) => {
   const SessionUser = sequelize.define('SessionUser', {
-    session_id: DataTypes.INTEGER,
-    user_id: DataTypes.INTEGER
+    sessionId: DataTypes.INTEGER,
+    userId: DataTypes.INTEGER
   }, {});
   SessionUser.associate = function(models) {
-    // associations can be defined here
+    models.SessionUser.belongsTo(models.Session, {foreignKey: 'sessionId'})
+    models.SessionUser.belongsTo(models.User, {foreignKey: 'userId'})
   };
   return SessionUser;
 };

@@ -8,15 +8,15 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      game_id: {
+      gameId: {
         allowNull: false,
         type: Sequelize.INTEGER
       },
-      creator_id: {
+      creatorId: {
         allowNull: false,
         type: Sequelize.INTEGER
       },
-      last_state: {
+      lastState: {
         allowNull: true,
         type: Sequelize.JSON
       },
