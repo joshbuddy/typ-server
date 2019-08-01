@@ -13,25 +13,25 @@ const db = require('../models')
 const SECRET_KEY = "asdasdasd"
 
 describe("Server", () => {
-  before(done => {
-    db.sequelize.sync({force:true}).then(() => done())
+  beforeEach(async () => {
+    for (let k in db.sequelize.models) {
+      await db.sequelize.query(`TRUNCATE TABLE "${db.sequelize.models[k].tableName}" CASCADE`)
+    }
   })
 
   beforeEach(done => {
-    db.User.create({email: "hello@asdf.com", password: "some-pass", username: "asd"}).then(user=> {
-      this.headers = {authorization: `JWT ${jwt.sign({id: user.id}, SECRET_KEY)}`}
-      this.secretKey = "some great secret"
-      this.server = createServer({secretKey: SECRET_KEY, redisUrl: "redis://localhost:6379"})
-      this.server.listen(3000, done)
-    })
+    const app = createServer({secretKey: SECRET_KEY, redisUrl: "redis://localhost:6379"})
+    this.server = app.listen(3000, done)
+  })
+
+  beforeEach(async () => {
+    const user = await db.User.create({email: "hello@asdf.com", password: "some-pass", name: "asd"})
+    this.headers = {authorization: `JWT ${jwt.sign({id: user.id}, SECRET_KEY)}`}
+    this.secretKey = "some great secret"
   })
 
   afterEach(() => {
     this.server.close()
-  })
-
-  after(async () => {
-    await db.sequelize.close()
   })
 
   it("should reject an unauthorized connection", done => {

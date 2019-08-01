@@ -1,6 +1,7 @@
 'use strict';
 module.exports = (sequelize, DataTypes) => {
   const Session = sequelize.define('Session', {
+    lastState: DataTypes.JSON,
     gameId: DataTypes.INTEGER,
     creatorId: DataTypes.INTEGER
   }, {});
