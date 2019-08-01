@@ -1,6 +1,5 @@
 const _ = require('lodash')
 const url = require('url')
-const fs = require("fs");
 const WebSocket = require("ws");
 const express = require("express");
 const http = require("http");
@@ -9,7 +8,7 @@ const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const path = require('path')
 const mime = require('mime')
-const AdmZip = require('adm-zip')
+const { NodeVM } = require('vm2');
 
 const db = require('./models')
 
@@ -71,8 +70,7 @@ module.exports = ({secretKey, redisUrl}) => {
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const game = await db.Game.findByPk(req.params.id)
-    const zip = new AdmZip(game.content)
-    const buf = zip.readFile(req.params[0])
+    const buf = game.contentZip.readFile(req.params[0])
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
@@ -82,6 +80,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const gameName = req.body.game
     const game = await db.Game.findOne({where: {name: gameName}}, {order: [['id', 'DESC']]})
     const session = await db.Session.create({creatorId: req.userId, gameId: game.id})
+    const userSession = await db.SessionUser.create({userId: req.userId, sessionId: session.id})
     res.json({id: session.id})
   })
 
@@ -89,6 +88,12 @@ module.exports = ({secretKey, redisUrl}) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const session = await db.Session.findByPk(req.params.id)
     res.json(session)
+  })
+
+  app.post('/user-sessions/:id', async (req, res) => {
+    if (!req.userId) return res.status(401).end('permission denied')
+    const userSession = await db.SessionUser.create({userId: req.userId, sessionId: req.params.id})
+    res.json({id: userSession.id})
   })
 
   const verifyClient = async (info, verified) => {
@@ -132,33 +137,29 @@ module.exports = ({secretKey, redisUrl}) => {
     }
   }
 
-  const onWssConnection = (ws, req) => {
-    const subscriber = redis.createClient(redisUrl);
-    let channelName = null;
-    let state = 'new'
-    let gameInterface = null
-    let lastPlayerState = null
-    let sessionUser = null
-
-    const joinGame = async (message) => {
-      console.log("JOINING!", message)
-      let [newSessionUser, created] = await db.SessionUser.findOrCreate({where: {userId: req.userId, sessionId: message.sessionId}})
-      sessionUser = newSessionUser
-      const session = await sessionUser.getSession()
-      const game = await session.getGame()
-      fs.mkdtemp('/tmp/typ-', (err, tempDir) => {
-        if (err) return console.log("err", err)
-        game.contentZip.extractAllTo(tempDir)
-        const gameClass = require(`${tempDir}/server.js`)
-        gameInterface = new gameClass(req.userId)
-        channelName = `session-${sessionUser.sessionId}`
-        subscriber.subscribe(channelName)
-        if (created) {
-          console.log("publishing")
-          publisher.publish(channelName, JSON.stringify({type: 'players'}))
-        }
-      })
+  const onWssConnection = async (ws, req) => {
+    let sessionUser = await db.SessionUser.findOne({where: {userId: req.userId, sessionId: req.sessionId}})
+    if (!sessionUser) {
+      return ws.close(4001)
     }
+
+    const vm = new NodeVM({
+      console: 'inherit',
+      sandbox: {},
+    })
+
+    const session = await sessionUser.getSession()
+    const game = await session.getGame()
+
+    const serverBuffer = game.contentZip.readFile("server.js")
+    const gameClass = vm.run(serverBuffer.toString())
+    const gameInterface = new gameClass(req.userId)
+    const channelName = `session-${sessionUser.sessionId}`
+    let lastPlayerState = null
+    let lastPlayers = null
+
+    const subscriber = redis.createClient(redisUrl);
+    subscriber.subscribe(channelName)
 
     const startGame = async (message) => {
       gameInterface.start()
@@ -193,18 +194,24 @@ module.exports = ({secretKey, redisUrl}) => {
       sessionUsers.forEach(u => {
         gameInterface.addPlayer(u.userId)
       })
-      ws.send(JSON.stringify({type: 'players', players: gameInterface.getPlayers()}))
+      const newPlayers = gameInterface.getPlayers()
+      if (!_.isEqual(lastPlayers, newPlayers)) {
+        ws.send(JSON.stringify({type: 'players', players: newPlayers}))
+        lastPlayers = newPlayers
+      }
     }
 
     const updateGameState = async () => {
-      const session = await db.Session.findByPk(sessionUser.sessionId)
+      await session.reload()
       gameInterface.setState(session.last_state)
     }
+
+    await updateGamePlayers()
+    await updateGameState()
 
     ws.on("message", async (data) => {
       const message = JSON.parse(data)
       switch(message.type) {
-        case 'joinGame':  return await joinGame(message)
         case 'startGame': return await startGame(message)
         case 'action':    return await gameAction(message)
       }
@@ -232,7 +239,6 @@ module.exports = ({secretKey, redisUrl}) => {
       subscriber.quit();
       throw error;
     });
-
   }
 
   wss.on("connection", onWssConnection);

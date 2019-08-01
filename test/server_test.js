@@ -95,12 +95,9 @@ describe("Server", () => {
         request.post("http://localhost:3000/sessions", {json: {game: 'hey'}, headers: this.headers}, (error, response, body) => {
           assert(!error, "no error")
           assert(body.id, "has no id")
-          const ws = new WebSocket("ws://localhost:3000", {headers: this.headers})
-          ws.on('message', (d) => {
+          const ws = new WebSocket(`ws://localhost:3000/sessions/${body.id}`, {headers: this.headers})
+          ws.once('message', (d) => {
             done()
-          })
-          ws.on('open', () => {
-            ws.send(JSON.stringify({type: 'joinGame', sessionId: body.id}))
           })
         })
       })
