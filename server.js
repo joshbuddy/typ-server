@@ -1,4 +1,5 @@
 const _ = require('lodash')
+const url = require('url')
 const fs = require("fs");
 const WebSocket = require("ws");
 const express = require("express");
@@ -120,6 +121,17 @@ module.exports = ({secretKey, redisUrl}) => {
   const wss = new WebSocket.Server({verifyClient, server})
   const publisher = redis.createClient(redisUrl);
 
+  wss.shouldHandle = (req) => {
+    const path = url.parse(req.url).pathname
+    const match = path.match(/\/sessions\/([^\/]+)/)
+    if (match) {
+      req.sessionId = match[1]
+      return true
+    } else {
+      return false
+    }
+  }
+
   const onWssConnection = (ws, req) => {
     const subscriber = redis.createClient(redisUrl);
     let channelName = null;
@@ -129,7 +141,7 @@ module.exports = ({secretKey, redisUrl}) => {
     let sessionUser = null
 
     const joinGame = async (message) => {
-      //console.log("JOINING!", message, db.SessionUser.findOrCreate)
+      console.log("JOINING!", message)
       let [newSessionUser, created] = await db.SessionUser.findOrCreate({where: {userId: req.userId, sessionId: message.sessionId}})
       sessionUser = newSessionUser
       const session = await sessionUser.getSession()
@@ -142,6 +154,7 @@ module.exports = ({secretKey, redisUrl}) => {
         channelName = `session-${sessionUser.sessionId}`
         subscriber.subscribe(channelName)
         if (created) {
+          console.log("publishing")
           publisher.publish(channelName, JSON.stringify({type: 'players'}))
         }
       })
@@ -170,8 +183,8 @@ module.exports = ({secretKey, redisUrl}) => {
 
       const newPlayerState = gameInterface.getPlayerState()
       if (!_.isEqual(newPlayerState, lastPlayerState)) {
+        ws.send(JSON.stringify({type: 'state', state: newPlayerState}))
         lastPlayerState = newPlayerState
-        ws.send(JSON.stringify({type: 'playerState', state: lastPlayerState}))
       }
     }
 
@@ -180,7 +193,7 @@ module.exports = ({secretKey, redisUrl}) => {
       sessionUsers.forEach(u => {
         gameInterface.addPlayer(u.userId)
       })
-      ws.send(JSON.stringify({type: 'playerState', players: gameInterface.getPlayers()}))
+      ws.send(JSON.stringify({type: 'players', players: gameInterface.getPlayers()}))
     }
 
     const updateGameState = async () => {

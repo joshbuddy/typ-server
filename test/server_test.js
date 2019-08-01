@@ -35,7 +35,7 @@ describe("Server", () => {
   })
 
   it("should reject an unauthorized connection", done => {
-    const ws = new WebSocket("ws://localhost:3000")
+    const ws = new WebSocket("ws://localhost:3000/sessions/123")
 
     ws.on('error', (err) => {
       assert(String(err).includes('Unexpected server response: 401'))
@@ -45,7 +45,7 @@ describe("Server", () => {
 
   context("authorized", () => {
     it("should accept an authorized connection", done => {
-      const ws = new WebSocket("ws://localhost:3000", {headers: this.headers})
+      const ws = new WebSocket("ws://localhost:3000/sessions/123", {headers: this.headers})
 
       ws.on('open', () => {
         ws.close()
