@@ -16,7 +16,7 @@ module.exports = ({secretKey, redisUrl}) => {
   const app = express();
   const server = http.createServer(app);
 
-  app.use(bodyParser.json())
+  app.use(bodyParser.json({limit: '50mb'}))
   app.use((req, res, next) => {
     if (!req.headers.hasOwnProperty("authorization")) return next()
 
@@ -53,7 +53,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const name = req.body.name
     const password = req.body.password
 
-    const user = await db.User.login(name, password)
+    const user = await db.User.findOne({where: {name, password}})
     if (!user) return res.status(400).end('')
 
     res.json({token: jwt.sign({id: user.id}, secretKey)})
@@ -62,7 +62,7 @@ module.exports = ({secretKey, redisUrl}) => {
   app.get('/', (req, res) => res.sendFile('index.html'))
 
   app.post('/games', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    // if (!req.userId) return res.status(401).end('permission denied')
 
     const game = await db.Game.create({name: req.body.name, content: Buffer.from(req.body.content, 'base64')})
     res.json({id: game.id})
@@ -147,14 +147,17 @@ module.exports = ({secretKey, redisUrl}) => {
     const vm = new NodeVM({
       console: 'inherit',
       sandbox: {},
+      require: {
+        external: true,
+      },
     })
 
     const session = await sessionUser.getSession()
     const game = await session.getGame()
 
-    const serverBuffer = game.contentZip.readFile("server.js")
+    const serverBuffer = game.contentZip.readFile("/server.js")
     const gameClass = vm.run(serverBuffer.toString())
-    const gameInterface = new gameClass(req.userId)
+    const gameInterface = new gameClass.default(req.userId)
     const channelName = `session-${sessionUser.sessionId}`
     let lastPlayerState = null
     let lastPlayers = null
