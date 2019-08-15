@@ -160,7 +160,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const session = await sessionUser.getSession()
     const game = await session.getGame()
 
-    const serverBuffer = game.contentZip.readFile("/server.js")
+    const serverBuffer = game.contentZip.readFile("server.js")
     const gameClass = vm.run(serverBuffer.toString())
     const gameInterface = new gameClass.default(req.userId)
     const channelName = `session-${sessionUser.sessionId}`
