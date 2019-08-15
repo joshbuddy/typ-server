@@ -54,4 +54,4 @@ class NumberGuess {
   }
 }
 
-module.exports = NumberGuess
+module.exports = {default: NumberGuess}
