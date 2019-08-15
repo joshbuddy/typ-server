@@ -3,8 +3,10 @@ const WebSocket = require('ws')
 const jwt = require("jsonwebtoken");
 const assert = require('assert')
 const request = require('request')
+const rp = require('request-promise');
 const AdmZip = require('adm-zip')
 const sequelize = require('sequelize')
+const bcrypt = require('bcrypt')
 
 const createServer = require('../server')
 const db = require('../models')
@@ -41,6 +43,13 @@ describe("Server", () => {
       assert(String(err).includes('Unexpected server response: 401'))
       done()
     });
+  })
+
+  it("should allow login", async () => {
+    const user = await db.User.create({name: 'joshbuddy', password: await bcrypt.hash('hello', 10)})
+    const body = await rp.post("http://localhost:3000/login", {json: {name: 'joshbuddy', password: 'hello'}, headers: this.headers})
+    console.log(body)
+    assert(body.token, "has no token")
   })
 
   context("authorized", () => {

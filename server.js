@@ -9,6 +9,7 @@ const jwt = require("jsonwebtoken")
 const path = require('path')
 const mime = require('mime')
 const { NodeVM } = require('vm2');
+const bcrypt = require('bcrypt')
 
 const db = require('./models')
 
@@ -16,6 +17,7 @@ module.exports = ({secretKey, redisUrl}) => {
   const app = express();
   const server = http.createServer(app);
 
+  app.set('view engine', 'ejs')
   app.use(bodyParser.json())
   app.use((req, res, next) => {
     if (!req.headers.hasOwnProperty("authorization")) return next()
@@ -42,8 +44,10 @@ module.exports = ({secretKey, redisUrl}) => {
 
   app.post('/users', async (req, res) => {
     const name = req.body.name
-    const password = req.body.password
+    const rawPassword = req.body.password
     const email = req.body.email
+
+    const password = await bcrypt.hash(rawPassword, 10)
 
     const user = await db.User.create({name, password, email})
     res.status(201).end('')
@@ -52,14 +56,15 @@ module.exports = ({secretKey, redisUrl}) => {
   app.post('/login', async (req, res) => {
     const name = req.body.name
     const password = req.body.password
-
-    const user = await db.User.login(name, password)
-    if (!user) return res.status(400).end('')
-
-    res.json({token: jwt.sign({id: user.id}, secretKey)})
+    const user = await db.User.findOne({ where: {name} })
+    if (!user) return res.status(401).end('')
+    const correctPassword = await bcrypt.compare(password, user.password)
+    if (!correctPassword) return res.status(401).end('')
+    const token = jwt.sign({id: user.id}, secretKey)
+    res.json({token})
   })
 
-  app.get('/', (req, res) => res.sendFile('index.html'))
+  app.get('/', (req, res) => res.render('index'))
 
   app.post('/games', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
