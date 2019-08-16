@@ -37,8 +37,8 @@ describe("Playing a game", () => {
     this.h1 = {authorization: `JWT ${jwt.sign({id: user1.id}, SECRET_KEY)}`}
     this.h2 = {authorization: `JWT ${jwt.sign({id: user2.id}, SECRET_KEY)}`}
     const gameZip = new AdmZip()
-    gameZip.addFile("server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-    gameZip.addFile("index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
+    gameZip.addFile("/server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
+    gameZip.addFile("/index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
     this.game = await db.Game.create({name: "hey", content: gameZip.toBuffer()})
     this.session = await db.Session.create({gameId: this.game.id, creatorId: user1.id})
 

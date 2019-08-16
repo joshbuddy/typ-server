@@ -84,8 +84,8 @@ describe("Server", () => {
     context("with a game", () => {
       beforeEach(async () => {
         const gameZip = new AdmZip()
-        gameZip.addFile("server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-        gameZip.addFile("index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
+        gameZip.addFile("/server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
+        gameZip.addFile("/index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
         this.game = await db.Game.create({name: "hey", content: gameZip.toBuffer()})
       })
 
