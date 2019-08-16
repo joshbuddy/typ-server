@@ -50,7 +50,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const password = await bcrypt.hash(rawPassword, 10)
 
     const user = await db.User.create({name, password, email})
-    res.status(201).end('')
+    res.status(201).json({id: user.id})
   })
 
   app.post('/login', async (req, res) => {

@@ -47,9 +47,13 @@ describe("Server", () => {
 
   it("should allow login", async () => {
     const user = await db.User.create({name: 'joshbuddy', password: await bcrypt.hash('hello', 10)})
-    const body = await rp.post("http://localhost:3000/login", {json: {name: 'joshbuddy', password: 'hello'}, headers: this.headers})
-    console.log(body)
+    const body = await rp.post("http://localhost:3000/login", {json: {name: 'joshbuddy', password: 'hello'}})
     assert(body.token, "has no token")
+  })
+
+  it("should create a user", async () => {
+    const body = await rp.post("http://localhost:3000/users", {json: {name: 'joshbuddy', password: 'hello', email: 'joshbuddy@gmail.com'}})
+    assert(body.id, "has no id")
   })
 
   context("authorized", () => {
