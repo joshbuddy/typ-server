@@ -7,6 +7,7 @@ const redis = require("redis");
 const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const path = require('path')
+const sequelize = require('sequelize')
 const mime = require('mime')
 const { NodeVM } = require('vm2');
 const bcrypt = require('bcrypt')
@@ -64,7 +65,15 @@ module.exports = ({secretKey, redisUrl}) => {
     res.json({token})
   })
 
-  app.get('/', (req, res) => res.render('index'))
+  app.get('/', async (req, res) => {
+    const sessions = await db.Session.findAll()
+    res.render('index', {sessions: sessions})
+  })
+
+  app.get('/sessions/new', async (req, res) => {
+    const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']] ,group: ['name'],raw: true})
+    res.render('sessions-new', {games: games})
+  })
 
   app.post('/games', async (req, res) => {
     // if (!req.userId) return res.status(401).end('permission denied')
@@ -76,7 +85,8 @@ module.exports = ({secretKey, redisUrl}) => {
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const game = await db.Game.findByPk(req.params.id)
-    const buf = game.contentZip.readFile(req.params[0])
+    console.log("req.params[0]", req.params[0])
+    const buf = game.contentZip.readFile(`/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
@@ -160,7 +170,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const session = await sessionUser.getSession()
     const game = await session.getGame()
 
-    const serverBuffer = game.contentZip.readFile("server.js")
+    const serverBuffer = game.contentZip.readFile("/server.js")
     const gameClass = vm.run(serverBuffer.toString())
     const gameInterface = new gameClass.default(req.userId)
     const channelName = `session-${sessionUser.sessionId}`

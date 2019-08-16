@@ -1,0 +1,10 @@
+<html>
+  <form method="POST">
+    <select name="gameId">
+      <% games.forEach(game => { %>
+        <option value="<%=game.maxId%>"><%=game.name%></option>
+      <% }) %>
+    </select>
+    <input type="submit">Create sessioN!</input>
+  </form>
+</html>

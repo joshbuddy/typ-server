@@ -1,0 +1,12 @@
+<html>
+<body>
+<h1>Sessions</h1>
+<ul>
+<% sessions.forEach(session => { %>
+  <li><%=session.game.name %> <%=session.ownerId %> <%=session.createdAt %></li>
+<% }) %>
+</ul>
+
+<p><a href="/sessions/new">create session</a></p>
+</body>
+</html
