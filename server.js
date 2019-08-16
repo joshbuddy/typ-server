@@ -6,12 +6,11 @@ const http = require("http");
 const redis = require("redis");
 const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
-const path = require('path')
 const sequelize = require('sequelize')
 const mime = require('mime')
 const { NodeVM } = require('vm2');
 const bcrypt = require('bcrypt')
-
+const GameInterface = require('./gameInterface')
 const db = require('./models')
 
 module.exports = ({secretKey, redisUrl}) => {
@@ -159,9 +158,10 @@ module.exports = ({secretKey, redisUrl}) => {
       return ws.close(4001)
     }
 
+    const gameInstance = new GameInterface(req.userId)
     const vm = new NodeVM({
       console: 'inherit',
-      sandbox: {},
+      sandbox: {game: gameInstance},
       require: {
         external: true,
       },
@@ -171,35 +171,35 @@ module.exports = ({secretKey, redisUrl}) => {
     const game = await session.getGame()
 
     const serverBuffer = game.contentZip.readFile("/server.js")
-    const gameClass = vm.run(serverBuffer.toString())
-    const gameInterface = new gameClass.default(req.userId)
+    vm.run(serverBuffer.toString())
     const channelName = `session-${sessionUser.sessionId}`
-    let lastPlayerState = null
+    let lastPlayerView = null
     let lastPlayers = null
 
     const subscriber = redis.createClient(redisUrl);
     subscriber.subscribe(channelName)
 
-    const startGame = async (message) => {
+    const startGame = async () => {
       const tx = await db.sequelize.transaction()
       const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
       if (session.lastState) {
         await tx.rollback()
         return
       }
-      gameInterface.startGame()
-      await session.update({lastState: gameInterface.getState()}, {transaction: tx})
+      gameInstance.start()
+      await session.update({lastState: gameInstance.getState()}, {transaction: tx})
       await session.save({transaction: tx})
       await tx.commit()
-      const newPlayerState = gameInterface.getPlayerState()
-      if (!_.isEqual(newPlayerState, lastPlayerState)) {
-        ws.send(JSON.stringify({type: 'state', state: newPlayerState}))
-        lastPlayerState = newPlayerState
+      const newPlayerView = gameInstance.getPlayerView()
+      if (!_.isEqual(newPlayerView, lastPlayerView)) {
+        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
+        lastPlayerView = newPlayerView
       }
       await publisher.publish(channelName, JSON.stringify({type: 'state'}))
     }
 
-    const gameAction = async (message) => {
+    const gameAction = async ([action, ...args]) => {
+      console.log('gameAction', action, args);
       const tx = await db.sequelize.transaction()
       const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
       if (!session.lastState) {
@@ -207,16 +207,16 @@ module.exports = ({secretKey, redisUrl}) => {
         return
       }
 
-      gameInterface.setState(session.lastState)
-      gameInterface.receiveAction(message.action)
-      await session.update({lastState: gameInterface.getState()}, {transaction: tx})
+      gameInstance.setState(session.lastState)
+      gameInstance.receiveAction(action, args)
+      await session.update({lastState: gameInstance.getState()}, {transaction: tx})
       await session.save()
       await tx.commit()
 
-      const newPlayerState = gameInterface.getPlayerState()
-      if (!_.isEqual(newPlayerState, lastPlayerState)) {
-        ws.send(JSON.stringify({type: 'state', state: newPlayerState}))
-        lastPlayerState = newPlayerState
+      const newPlayerView = gameInstance.getPlayerView()
+      if (!_.isEqual(newPlayerView, lastPlayerView)) {
+        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
+        lastPlayerView = newPlayerView
       }
 
       await publisher.publish(channelName, JSON.stringify({type: 'state'}))
@@ -225,9 +225,9 @@ module.exports = ({secretKey, redisUrl}) => {
     const updateGamePlayers = async () => {
       const sessionUsers = await db.SessionUser.findAll({where: {sessionId: sessionUser.sessionId}, order: [['userId']]})
       sessionUsers.forEach(u => {
-        gameInterface.addPlayer(u.userId)
+        gameInstance.addPlayer(u.userId)
       })
-      const newPlayers = gameInterface.getPlayers()
+      const newPlayers = gameInstance.getPlayers()
       if (!_.isEqual(lastPlayers, newPlayers)) {
         ws.send(JSON.stringify({type: 'players', players: newPlayers}))
         lastPlayers = newPlayers
@@ -236,20 +236,27 @@ module.exports = ({secretKey, redisUrl}) => {
 
     const updateGameState = async () => {
       await session.reload()
-      gameInterface.setState(session.lastState)
-      const newPlayerState = gameInterface.getPlayerState()
-      if (!_.isEqual(newPlayerState, lastPlayerState)) {
-        ws.send(JSON.stringify({type: 'state', state: newPlayerState}))
-        lastPlayerState = newPlayerState
+      gameInstance.setState(session.lastState)
+      const newPlayerView = gameInstance.getPlayerView()
+      if (!_.isEqual(newPlayerView, lastPlayerView)) {
+        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
+        lastPlayerView = newPlayerView
       }
+    }
+
+    const refresh = async () => {
+      await updateGameState();
+      ws.send(JSON.stringify({type: 'update', data: gameInstance.getPlayerView()}))
     }
 
     ws.on("message", async (data) => {
       const message = JSON.parse(data)
+      console.log('onmessage', message.type);
 
       switch(message.type) {
-        case 'startGame': return await startGame(message)
-        case 'action':    return await gameAction(message)
+        case 'startGame': return await startGame()
+        case 'action':    return await gameAction(message.payload)
+        case 'refresh':   return await refresh()
       }
     })
 

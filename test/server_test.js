@@ -112,6 +112,9 @@ describe("Server", () => {
           ws.once('message', (d) => {
             done()
           })
+          ws.on('open', function open() {
+            ws.send(JSON.stringify({type: "refresh"}))
+          });
         })
       })
     })
