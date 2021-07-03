@@ -75,7 +75,7 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.post('/games', async (req, res) => {
-    // if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return res.status(401).end('permission denied')
 
     const game = await db.Game.create({name: req.body.name, content: Buffer.from(req.body.content, 'base64')})
     res.json({id: game.id})
@@ -85,7 +85,7 @@ module.exports = ({secretKey, redisUrl}) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const game = await db.Game.findByPk(req.params.id)
     console.log("req.params[0]", req.params[0])
-    const buf = game.contentZip.readFile(`/${req.params[0]}`)
+    const buf = game.read(`/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
@@ -170,7 +170,7 @@ module.exports = ({secretKey, redisUrl}) => {
     const session = await sessionUser.getSession()
     const game = await session.getGame()
 
-    const serverBuffer = game.contentZip.readFile("/server.js")
+    const serverBuffer = game.file("/server.js")
     vm.run(serverBuffer.toString())
     const channelName = `session-${sessionUser.sessionId}`
     let lastPlayerView = null

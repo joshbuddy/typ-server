@@ -36,10 +36,7 @@ describe("Playing a game", () => {
     const user2 = await db.User.create({email: "hello2@asdf.com", password: "some-pass2", name: "asd2"})
     this.h1 = {authorization: `JWT ${jwt.sign({id: user1.id}, SECRET_KEY)}`}
     this.h2 = {authorization: `JWT ${jwt.sign({id: user2.id}, SECRET_KEY)}`}
-    const gameZip = new AdmZip()
-    gameZip.addFile("/server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-    gameZip.addFile("/index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
-    this.game = await db.Game.create({name: "hey", content: gameZip.toBuffer()})
+    this.game = await db.Game.create({name: "hey", localDir: 'numberGuesser'})
     this.session = await db.Session.create({gameId: this.game.id, creatorId: user1.id})
 
     await db.SessionUser.create({sessionId: this.session.id, userId: user1.id})
