@@ -23,31 +23,34 @@ module.exports = ({secretKey, redisUrl}) => {
   app.use(bodyParser.urlencoded({ extended: true }))
   app.use(cookieParser())
   app.use((req, res, next) => {
-    let token = null
-    if (req.headers.hasOwnProperty("authorization")) {
-      token = req.headers.authorization.replace("JWT ", "")
-    } else if (req.cookies.jwt) {
-      token = req.cookies.jwt
-    }
-    if (!token) return next()
     try {
-      jwt.verify(
-        token,
-        secretKey,
-        {
-          ignoreExpiration: true
-        },
-        (error, decoded) => {
-          if (error) return res.status(401).end('permission denied')
-          req.userId = decoded.id;
-          next()
+      verifyToken(req, (error, user) => {
+        if (error) {
+          throw error
         }
-      );
+        if (user) {
+          req.userId = user.id;
+        }
+        return next()
+      })
     } catch (error) {
-      console.error("wssVerifyClient: ", error);
+      console.error("verifyToken: ", error);
       return res.status(401).end('permission denied')
     }
   })
+
+  function verifyToken(req, callback) {
+    let token = null
+    if (req.headers.hasOwnProperty("authorization")) {
+      token = req.headers.authorization.replace("JWT ", "")
+    } else if (req.cookies && req.cookies.jwt) {
+      token = req.cookies.jwt
+    }
+    if (!token) {
+      return callback()
+    }
+    jwt.verify(token, secretKey, { ignoreExpiration: true }, callback)
+  }
 
   app.post('/users', async (req, res) => {
     const name = req.body.name || ''
@@ -65,7 +68,6 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.post('/login', async (req, res) => {
-    console.log(req.body)
     const name = req.body.name || ''
     const password = req.body.password || ''
     const user = await db.User.findOne({ where: {name} })
@@ -101,14 +103,12 @@ module.exports = ({secretKey, redisUrl}) => {
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const game = await db.Game.findByPk(req.params.id)
-    console.log("req.params[0]", req.params[0])
     const buf = game.file(`/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
 
   app.post('/sessions', async (req, res) => {
-    console.log(req.body)
     if (!req.userId) return res.status(401).end('permission denied')
     if (!req.body.gameId) return res.status(400).end('no game specified')
     const session = await db.Session.create({creatorId: req.userId, gameId: req.body.gameId})
@@ -138,28 +138,17 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   const verifyClient = async (info, verified) => {
-    if (!info.req.headers.hasOwnProperty("authorization"))
-      return verified(false, 401, "Authorization required");
-
-    const token = info.req.headers.authorization.replace("JWT ", "");
+    cookieParser()(info.req, null, () => {})
     try {
-      jwt.verify(
-        token,
-        secretKey,
-        {
-          ignoreExpiration: true
-        },
-        (error, decoded) => {
-          if (error) {
-            verified(false, 401, "Unauthorized");
-          } else {
-            info.req.userId = decoded.id;
-            verified(true);
-          }
+      verifyToken(info.req, (error, user) => {
+        if (error || !user) {
+          return verified(false, 401, "Unauthorized");
         }
-      );
+        info.req.userId = user.id;
+        verified(true);
+      })
     } catch (error) {
-      console.error("wssVerifyClient: ", error);
+      console.error("verifyClient: ", error);
       throw error;
     }
   }
@@ -276,13 +265,17 @@ module.exports = ({secretKey, redisUrl}) => {
     }
 
     ws.on("message", async (data) => {
-      const message = JSON.parse(data)
-      console.log('onmessage', message.type);
+      let message
+      try {
+        message = JSON.parse(data)
 
-      switch(message.type) {
-        case 'startGame': return await startGame()
-        case 'action':    return await gameAction(message.payload)
-        case 'refresh':   return await refresh()
+        switch(message.type) {
+          case 'startGame': return await startGame()
+          case 'action':    return await gameAction(message.payload)
+          case 'refresh':   return await refresh()
+        }
+      } catch(e) {
+        console.error(`invalid json ${data}`)
       }
     })
 
@@ -301,18 +294,18 @@ module.exports = ({secretKey, redisUrl}) => {
     })
 
     ws.on("close", () => {
-      subscriber.unsubscribe();
-      subscriber.quit();
-    });
+      subscriber.unsubscribe()
+      subscriber.quit()
+    })
 
     ws.on("error", error => {
-      subscriber.unsubscribe();
-      subscriber.quit();
-      throw error;
+      subscriber.unsubscribe()
+      subscriber.quit()
+      throw error
     });
   }
 
-  wss.on("connection", onWssConnection);
+  wss.on("connection", onWssConnection)
 
   return server
 }
