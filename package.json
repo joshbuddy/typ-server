@@ -4,6 +4,7 @@
   "description": "",
   "main": "run.js",
   "scripts": {
+    "start": "node run.js",
     "test": "NODE_ENV=test ./node_modules/mocha/bin/mocha --exit"
   },
   "author": "",
@@ -11,6 +12,7 @@
   "dependencies": {
     "adm-zip": "^0.4.13",
     "bcrypt": "^3.0.6",
+    "cookie-parser": "^1.4.5",
     "ejs": "^2.6.2",
     "express": "^4.17.1",
     "immutable": "^4.0.0-rc.12",

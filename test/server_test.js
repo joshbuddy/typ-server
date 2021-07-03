@@ -71,8 +71,8 @@ describe("Server", () => {
 
     it("should allow creating a new game", (done) => {
       const gameZip = new AdmZip()
-      gameZip.addFile("server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-      gameZip.addFile("index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
+      gameZip.addFile("server.js", fs.readFileSync(__dirname + "/../games/numberGuesser/server.js"));
+      gameZip.addFile("index.js", fs.readFileSync(__dirname + "/../games/numberGuesser/index.js"));
 
       request.post("http://localhost:3000/games", {json: {name: 'hey', content: gameZip.toBuffer().toString('base64')}, headers: this.headers}, (error, response, body) => {
         assert(!error, "no error")
@@ -83,14 +83,11 @@ describe("Server", () => {
 
     context("with a game", () => {
       beforeEach(async () => {
-        const gameZip = new AdmZip()
-        gameZip.addFile("/server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-        gameZip.addFile("/index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
-        this.game = await db.Game.create({name: "hey", content: gameZip.toBuffer()})
+        this.game = await db.Game.create({name: "hey", localDir: 'numberGuesser'})
       })
 
       it("should allow creating a session", (done) => {
-        request.post("http://localhost:3000/sessions", {json: {game: 'hey'}, headers: this.headers}, (error, response, body) => {
+        request.post("http://localhost:3000/sessions", {json: {gameId: this.game.id}, headers: this.headers}, (error, response, body) => {
           assert(!error, "no error")
           assert(body.id, "has no id")
           done()
@@ -99,13 +96,13 @@ describe("Server", () => {
 
       it("should allow getting a specific asset", (done) => {
         request.get(`http://localhost:3000/games/${this.game.id}/index.js`,{headers: this.headers}, (error, response, body) => {
-          assert.equal(body, fs.readFileSync(__dirname + "/fixture/index.js"))
+          assert.equal(body, fs.readFileSync(__dirname + "/../games/numberGuesser/index.js"))
           done()
         })
       })
 
       it("should allow joining a game", (done) => {
-        request.post("http://localhost:3000/sessions", {json: {game: 'hey'}, headers: this.headers}, (error, response, body) => {
+        request.post("http://localhost:3000/sessions", {json: {gameId: this.game.id}, headers: this.headers}, (error, response, body) => {
           assert(!error, "no error")
           assert(body.id, "has no id")
           const ws = new WebSocket(`ws://localhost:3000/sessions/${body.id}`, {headers: this.headers})

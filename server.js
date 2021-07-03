@@ -12,6 +12,7 @@ const { NodeVM } = require('vm2');
 const bcrypt = require('bcrypt')
 const GameInterface = require('./gameInterface')
 const db = require('./models')
+const cookieParser = require('cookie-parser')
 
 module.exports = ({secretKey, redisUrl}) => {
   const app = express();
@@ -19,10 +20,16 @@ module.exports = ({secretKey, redisUrl}) => {
 
   app.set('view engine', 'ejs')
   app.use(bodyParser.json({limit: '50mb'}))
+  app.use(bodyParser.urlencoded({ extended: true }))
+  app.use(cookieParser())
   app.use((req, res, next) => {
-    if (!req.headers.hasOwnProperty("authorization")) return next()
-
-    const token = req.headers.authorization.replace("JWT ", "");
+    let token = null
+    if (req.headers.hasOwnProperty("authorization")) {
+      token = req.headers.authorization.replace("JWT ", "")
+    } else if (req.cookies.jwt) {
+      token = req.cookies.jwt
+    }
+    if (!token) return next()
     try {
       jwt.verify(
         token,
@@ -43,9 +50,9 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.post('/users', async (req, res) => {
-    const name = req.body.name
-    const rawPassword = req.body.password
-    const email = req.body.email
+    const name = req.body.name || ''
+    const rawPassword = req.body.password || ''
+    const email = req.body.email || ''
 
     const password = await bcrypt.hash(rawPassword, 10)
 
@@ -53,24 +60,34 @@ module.exports = ({secretKey, redisUrl}) => {
     res.status(201).json({id: user.id})
   })
 
+  app.get('/login', async (req, res) => {
+    res.render('login')
+  })
+
   app.post('/login', async (req, res) => {
-    const name = req.body.name
-    const password = req.body.password
+    console.log(req.body)
+    const name = req.body.name || ''
+    const password = req.body.password || ''
     const user = await db.User.findOne({ where: {name} })
     if (!user) return res.status(401).end('')
     const correctPassword = await bcrypt.compare(password, user.password)
     if (!correctPassword) return res.status(401).end('')
     const token = jwt.sign({id: user.id}, secretKey)
-    res.json({token})
+    if (req.is('json')) {
+      res.json({token})
+    } else {
+      res.cookie('jwt',token)
+      res.redirect("/")
+    }
   })
 
   app.get('/', async (req, res) => {
-    const sessions = await db.Session.findAll()
+    const sessions = await db.Session.findAll({ include: [db.Game, {model: db.User, as: 'creator'}] })
     res.render('index', {sessions: sessions})
   })
 
   app.get('/sessions/new', async (req, res) => {
-    const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']] ,group: ['name'],raw: true})
+    const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']], group: ['name'], raw: true})
     res.render('sessions-new', {games: games})
   })
 
@@ -85,24 +102,33 @@ module.exports = ({secretKey, redisUrl}) => {
     if (!req.userId) return res.status(401).end('permission denied')
     const game = await db.Game.findByPk(req.params.id)
     console.log("req.params[0]", req.params[0])
-    const buf = game.read(`/${req.params[0]}`)
+    const buf = game.file(`/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
 
   app.post('/sessions', async (req, res) => {
+    console.log(req.body)
     if (!req.userId) return res.status(401).end('permission denied')
-    const gameName = req.body.game
-    const game = await db.Game.findOne({where: {name: gameName}, order: [['id', 'DESC']]})
-    const session = await db.Session.create({creatorId: req.userId, gameId: game.id})
+    if (!req.body.gameId) return res.status(400).end('no game specified')
+    const session = await db.Session.create({creatorId: req.userId, gameId: req.body.gameId})
     const userSession = await db.SessionUser.create({userId: req.userId, sessionId: session.id})
     res.json({id: session.id})
   })
 
   app.get('/sessions/:id', async (req, res) => {
     if (!req.userId) return res.status(401).end('permission denied')
-    const session = await db.Session.findByPk(req.params.id)
-    res.json(session)
+    const session = await db.Session.findByPk(req.params.id, {
+      include: {
+        model: db.SessionUser,
+        include: db.User,
+      }
+    })
+    if (req.is('json')) {
+      res.json(session)
+    } else {
+      res.render('session', {session, me: req.userId})
+    }
   })
 
   app.post('/user-sessions/:id', async (req, res) => {

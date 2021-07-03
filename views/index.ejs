@@ -3,7 +3,7 @@
 <h1>Sessions</h1>
 <ul>
 <% sessions.forEach(session => { %>
-  <li><%=session.game.name %> <%=session.ownerId %> <%=session.createdAt %></li>
+  <li><a href="/sessions/<%= session.id %>"><%=session.Game.name %></a> <%=session.creator.name %> <%=session.createdAt %></li>
 <% }) %>
 </ul>
 

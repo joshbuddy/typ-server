@@ -6,7 +6,7 @@ module.exports = (sequelize, DataTypes) => {
     creatorId: DataTypes.INTEGER
   }, {});
   Session.associate = function(models) {
-    //models.Session.hasMany(models.SessionUser)
+    models.Session.hasMany(models.SessionUser, {foreignKey: 'sessionId'})
     models.Session.belongsTo(models.Game, {foreignKey: 'gameId'})
     models.Session.belongsTo(models.User, {
       constraints: false,

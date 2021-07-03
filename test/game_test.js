@@ -1,10 +1,9 @@
-const fs = require('fs')
+/* global describe, beforeEach, afterEach, it */
+
 const WebSocket = require('ws')
 const jwt = require("jsonwebtoken");
-const assert = require('assert')
 const createServer = require('../server')
 const db = require('../models')
-const AdmZip = require('adm-zip')
 
 const SECRET_KEY = "asdasdasd"
 
