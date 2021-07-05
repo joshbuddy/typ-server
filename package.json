@@ -4,7 +4,7 @@
   "description": "",
   "main": "run.js",
   "scripts": {
-    "start": "node run.js",
+    "start": "nodemon run.js",
     "test": "NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
     "build": "webpack"
   },

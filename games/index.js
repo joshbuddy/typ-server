@@ -49,9 +49,13 @@ class IndexPage extends Component {
       <div>
         <div>
           Players:
-          <ul>{this.state.players.map(player => <li key={player}>{player}</li>)}</ul>
+          <ul>
+            {this.state.players.map(player => (
+              <li key={player.id}>{player.name} {player === this.state.players[this.state.data.currentPlayer] && '<--'}</li>
+            ))}
+          </ul>
         </div>
-        <div>Game state: {JSON.stringify(this.state.data)}</div>
+        <div>Game state: {JSON.stringify(this.state.data.variables)}</div>
         {this.state.data.phase === 'setup' && (
           <div>
             <button onClick={e => this.send('startGame')}>Start</button>

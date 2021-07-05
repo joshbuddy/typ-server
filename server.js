@@ -34,12 +34,11 @@ module.exports = ({secretKey, redisUrl}) => {
         if (user) {
           req.userId = user.id
         }
-        return next()
       })
     } catch (error) {
       console.error("verifyToken: ", error)
-      return res.status(401).end('permission denied')
     }
+    return next()
   })
 
   function verifyToken(req, callback) {
@@ -55,6 +54,15 @@ module.exports = ({secretKey, redisUrl}) => {
     jwt.verify(token, secretKey, { ignoreExpiration: true }, callback)
   }
 
+  function unauthorized(req, res, message) {
+    if (req.is('json')) {
+      res.status(401).end(message)
+    } else {
+      res.cookie('flash', message)
+      res.redirect('/login')
+    }
+  }
+
   app.post('/users', async (req, res) => {
     const name = req.body.name || ''
     const rawPassword = req.body.password || ''
@@ -67,16 +75,18 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.get('/login', async (req, res) => {
-    res.render('login')
+    const message = req.cookies.flash
+    res.clearCookie('flash')
+    res.render('login', { message })
   })
 
   app.post('/login', async (req, res) => {
     const name = req.body.name || ''
     const password = req.body.password || ''
     const user = await db.User.findOne({ where: {name} })
-    if (!user) return res.status(401).end('')
+    if (!user) return unauthorized(req, res, res, 'incorrect login')
     const correctPassword = await bcrypt.compare(password, user.password)
-    if (!correctPassword) return res.status(401).end('')
+    if (!correctPassword) return unauthorized(req, res, 'incorrect login')
     const token = jwt.sign({id: user.id}, secretKey)
     if (req.is('json')) {
       res.json({token})
@@ -86,25 +96,31 @@ module.exports = ({secretKey, redisUrl}) => {
     }
   })
 
+  app.get('/logout', async (req, res) => {
+    res.clearCookie('jwt')
+    res.redirect("/")
+  })
+
   app.get('/', async (req, res) => {
     const sessions = await db.Session.findAll({ include: [db.Game, {model: db.User, as: 'creator'}] })
     res.render('index', {sessions: sessions})
   })
 
   app.get('/sessions/new', async (req, res) => {
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
     const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']], group: ['name'], raw: true})
     res.render('sessions-new', {games: games})
   })
 
   app.post('/games', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
 
     const game = await db.Game.create({name: req.body.name, content: Buffer.from(req.body.content, 'base64')})
     res.json({id: game.id})
   })
 
   app.get('/games/:id/*', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
     const game = await db.Game.findByPk(req.params.id)
     const buf = game.file(`/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
@@ -112,15 +128,19 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.post('/sessions', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
     if (!req.body.gameId) return res.status(400).end('no game specified')
     const session = await db.Session.create({creatorId: req.userId, gameId: req.body.gameId})
     await db.SessionUser.create({userId: req.userId, sessionId: session.id})
-    res.json({id: session.id})
+    if (req.is('json')) {
+      res.json({id: session.id})
+    } else {
+      res.redirect('/sessions/' + session.id)
+    }
   })
 
   app.get('/sessions/:id', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
     const session = await db.Session.findByPk(req.params.id, {
       include: {
         model: db.SessionUser,
@@ -135,9 +155,13 @@ module.exports = ({secretKey, redisUrl}) => {
   })
 
   app.post('/user-sessions/:id', async (req, res) => {
-    if (!req.userId) return res.status(401).end('permission denied')
+    if (!req.userId) return unauthorized(req, res, 'permission denied')
     const userSession = await db.SessionUser.create({userId: req.userId, sessionId: req.params.id})
-    res.json({id: userSession.id})
+    if (req.is('json')) {
+      res.json({id: userSession.id})
+    } else {
+      res.redirect('/sessions/' + req.params.id)
+    }
   })
 
   if (process.env.NODE_ENV === 'development') {
@@ -215,14 +239,19 @@ module.exports = ({secretKey, redisUrl}) => {
     const startGame = async () => {
       const tx = await db.sequelize.transaction()
       const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
-      if (session.lastState) {
+      if (session.lastState && session.lastState.phase !== 'setup') {
         await tx.rollback()
         return
       }
-      gameInstance.start()
-      await session.update({lastState: gameInstance.getState()}, {transaction: tx})
-      await session.save({transaction: tx})
-      await tx.commit()
+      try {
+        gameInstance.start()
+        await session.update({lastState: gameInstance.getState()}, {transaction: tx})
+        await session.save({transaction: tx})
+      } catch(e) {
+        return ws.send(JSON.stringify(e.message))
+      } finally {
+        await tx.commit()
+      }
       const newPlayerView = gameInstance.getPlayerView()
       if (!_.isEqual(newPlayerView, lastPlayerView)) {
         ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
@@ -260,14 +289,21 @@ module.exports = ({secretKey, redisUrl}) => {
     }
 
     const updateGamePlayers = async () => {
-      const sessionUsers = await db.SessionUser.findAll({where: {sessionId: sessionUser.sessionId}, order: [['userId']]})
-      sessionUsers.forEach(u => {
-        gameInstance.addPlayer(u.userId)
+      const sessionUsers = await db.SessionUser.findAll({
+        where: {sessionId: sessionUser.sessionId},
+        order: [['userId']],
+        include: {
+          model: db.User,
+          attributes: ['id', 'name'],
+        },
       })
-      const newPlayers = gameInstance.getPlayers()
-      if (!_.isEqual(lastPlayers, newPlayers)) {
-        ws.send(JSON.stringify({type: 'players', players: newPlayers}))
-        lastPlayers = newPlayers
+      const users = sessionUsers.map(s => s.User)
+      users.forEach(u => {
+        gameInstance.addPlayer(u.id)
+      })
+      if (!_.isEqual(lastPlayers, users)) {
+        ws.send(JSON.stringify({type: 'players', players: users}))
+        lastPlayers = users
       }
     }
 
@@ -288,7 +324,6 @@ module.exports = ({secretKey, redisUrl}) => {
 
     ws.on("message", async (data) => {
       let message
-      console.log('onmessage', data)
       try {
         message = JSON.parse(data)
       } catch(e) {

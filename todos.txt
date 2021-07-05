@@ -1,0 +1,11 @@
+- start qa list
+  - send choices to client
+  - display choices
+- add board/pile
+  - allow element locking
+
+- make prod packaging
+- auto-reconnect
+- connection status
+- show errors from server
+- fix players full
