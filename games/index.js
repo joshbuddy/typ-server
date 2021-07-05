@@ -6,7 +6,8 @@ class IndexPage extends Component {
     super(props)
     this.state = {
       data: {},
-      players: []
+      players: [],
+      input: ''
     }
   }
 
@@ -27,7 +28,20 @@ class IndexPage extends Component {
       }
     }
 
-    setInterval(() => this.webSocket.send(JSON.stringify({type: "refresh"})), 5000)
+    setInterval(() => this.send('refresh'), 5000)
+  }
+
+  send(action, args) {
+    this.webSocket.send(JSON.stringify(Object.assign({type: action}, args)))
+  }
+
+  gameAction() {
+    this.send(
+      'action', {
+        payload: this.state.input.split(' ')
+      }
+    )
+    this.setState({input: ''})
   }
 
   render() {
@@ -38,8 +52,19 @@ class IndexPage extends Component {
           <ul>{this.state.players.map(player => <li key={player}>{player}</li>)}</ul>
         </div>
         <div>Game state: {JSON.stringify(this.state.data)}</div>
+        {this.state.data.phase === 'setup' && (
+          <div>
+            <button onClick={e => this.send('startGame')}>Start</button>
+          </div>
+        )}
+        {this.state.data.phase === 'playing' && (
+          <div>
+            <input value={this.state.input} onChange={e => this.setState({input: e.target.value})}/>
+            <button onClick={e => this.gameAction()}>Send</button>
+          </div>
+        )}
       </div>
-    )
+        )
   }
 }
 

@@ -241,7 +241,11 @@ module.exports = ({secretKey, redisUrl}) => {
       }
 
       gameInstance.setState(session.lastState)
-      gameInstance.receiveAction(action, args)
+      try {
+        gameInstance.receiveAction(action, args)
+      } catch(e) {
+        ws.send(JSON.stringify(e.message))
+      }
       await session.update({lastState: gameInstance.getState()}, {transaction: tx})
       await session.save()
       await tx.commit()
@@ -284,20 +288,18 @@ module.exports = ({secretKey, redisUrl}) => {
 
     ws.on("message", async (data) => {
       let message
+      console.log('onmessage', data)
       try {
         message = JSON.parse(data)
       } catch(e) {
         console.error(`invalid json ${data}`)
       }
+      console.log('onmessage', message)
 
-      try {
-        switch(message.type) {
-          case 'startGame': return await startGame()
-          case 'action':    return await gameAction(message.payload)
-          case 'refresh':   return await refresh()
-        }
-      } catch(e) {
-        ws.send(JSON.stringify(e))
+      switch(message.type) {
+        case 'startGame': return await startGame()
+        case 'action':    return await gameAction(message.payload)
+        case 'refresh':   return await refresh()
       }
     })
 

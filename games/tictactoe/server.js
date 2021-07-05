@@ -13,9 +13,9 @@ game.hide("correct")
 
 game.moves = {
   guess: number => {
-    if (number === game.get('correct')) {
+    if (number === String(game.get('correct'))) {
       game.phase = 'finished'
-      game.set('winner', game.playerIndex)
+      game.set('winner', game.player)
     } else {
       game.set('guesses', game.get('guesses') + 1)
       game.endTurn()

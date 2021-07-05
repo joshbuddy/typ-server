@@ -78,8 +78,10 @@ class GameInterface {
   }
 
   receiveAction(action, args) {
+    console.log('receiveAction', this.phase, this.currentPlayer, this.player)
     if (this.phase !== 'playing') throw Error("game not active")
     if (this.currentPlayer !== this.player) throw Error("it's not your turn")
+    console.log('moves', action, args)
     if (this.moves[action]) {
       this.moves[action].apply(this, args)
     }
