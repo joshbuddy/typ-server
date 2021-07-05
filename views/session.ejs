@@ -7,7 +7,7 @@
 </ul>
 
 <% if (session.SessionUsers.find(su => su.userId == me)) { %>
-  <a href="">Enter</a>
+  <a href="/game?session=<%= session.id %>">Enter</a>
 <% } else { %>
   <form action="/user-sessions/<%= session.id %>" method="POST">
     <input type="submit" value="Join"/>

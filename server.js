@@ -159,6 +159,7 @@ module.exports = ({secretKey, redisUrl}) => {
     try {
       verifyToken(info.req, (error, user) => {
         if (error || !user) {
+          console.error("verifyClient fail: ", error, user)
           return verified(false, 401, "Unauthorized")
         }
         info.req.userId = user.id
