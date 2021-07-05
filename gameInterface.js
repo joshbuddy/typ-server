@@ -4,11 +4,13 @@ class GameInterface {
     this.players = []
     this.moves = {}
     this.phase = 'setup'
+    this.hiddenKeys = []
+    this.variables = {}
   }
 
   start() {
     if (this.players.length < this.minPlayers) throw Error("not enough players")
-    this.variables = this.initialVariables;
+    this.variables = this.initialVariables || {};
     this.currentPlayer = 0
     this.phase = 'playing'
   }
@@ -29,11 +31,23 @@ class GameInterface {
   }
 
   set(key, value) {
-    this.variables = Object.assign(this.variables, value);
+    this.variables[key] = value;
   }
 
   delete(key) {
     delete this.variables[key]
+  }
+
+  hide(key) {
+    this.hiddenKeys.push(key)
+  }
+
+  shownVariables() {
+    const a = this.hiddenKeys.reduce((vars, key) => {
+      let {[key]: omit, ...rest} = vars
+      return rest
+    }, this.variables)
+    return a
   }
 
   getState() {
@@ -46,7 +60,6 @@ class GameInterface {
   }
 
   setState(saveData) {
-    console.log('setState', saveData);
     if (saveData) {
       this.variables = saveData.variables,
       this.players = saveData.players;
@@ -57,7 +70,7 @@ class GameInterface {
 
   getPlayerView() {
     return {
-      variables: this.variables,
+      variables: this.shownVariables(),
       phase: this.phase,
       players: this.players,
       currentPlayer: this.currentPlayer,

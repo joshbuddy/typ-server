@@ -9,13 +9,15 @@ game.initialVariables = {
   guesses: 0
 }
 
+game.hide("correct")
+
 game.moves = {
   guess: number => {
     if (number === game.get('correct')) {
       game.phase = 'finished'
-      game.set({ winner: game.playerIndex })
+      game.set('winner', game.playerIndex)
     } else {
-      game.set({ guesses: game.get('guesses') + 1 })
+      game.set('guesses', game.get('guesses') + 1)
       game.endTurn()
     }
   }

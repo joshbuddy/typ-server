@@ -1,22 +1,25 @@
 const _ = require('lodash')
 const url = require('url')
-const WebSocket = require("ws");
-const express = require("express");
-const http = require("http");
-const redis = require("redis");
+const WebSocket = require("ws")
+const express = require("express")
+const http = require("http")
+const redis = require("redis")
 const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const sequelize = require('sequelize')
 const mime = require('mime')
-const { NodeVM } = require('vm2');
+const { NodeVM } = require('vm2')
 const bcrypt = require('bcrypt')
 const GameInterface = require('./gameInterface')
 const db = require('./models')
 const cookieParser = require('cookie-parser')
+const webpack = require('webpack')
+const webpackConfig = require('./webpack.config')
+const webpackCompiler = webpack(webpackConfig)
 
 module.exports = ({secretKey, redisUrl}) => {
-  const app = express();
-  const server = http.createServer(app);
+  const app = express()
+  const server = http.createServer(app)
 
   app.set('view engine', 'ejs')
   app.use(bodyParser.json({limit: '50mb'}))
@@ -29,12 +32,12 @@ module.exports = ({secretKey, redisUrl}) => {
           throw error
         }
         if (user) {
-          req.userId = user.id;
+          req.userId = user.id
         }
         return next()
       })
     } catch (error) {
-      console.error("verifyToken: ", error);
+      console.error("verifyToken: ", error)
       return res.status(401).end('permission denied')
     }
   })
@@ -112,7 +115,7 @@ module.exports = ({secretKey, redisUrl}) => {
     if (!req.userId) return res.status(401).end('permission denied')
     if (!req.body.gameId) return res.status(400).end('no game specified')
     const session = await db.Session.create({creatorId: req.userId, gameId: req.body.gameId})
-    const userSession = await db.SessionUser.create({userId: req.userId, sessionId: session.id})
+    await db.SessionUser.create({userId: req.userId, sessionId: session.id})
     res.json({id: session.id})
   })
 
@@ -137,24 +140,38 @@ module.exports = ({secretKey, redisUrl}) => {
     res.json({id: userSession.id})
   })
 
+  if (process.env.NODE_ENV === 'development') {
+    app.use(
+      require('webpack-dev-middleware')(webpackCompiler, {
+        publicPath: webpackConfig.output.publicPath,
+      }),
+    )
+
+    app.use(
+      require('webpack-hot-middleware')(webpackCompiler),
+    )
+  }
+
+  app.use('/game', express.static('dist'))
+
   const verifyClient = async (info, verified) => {
     cookieParser()(info.req, null, () => {})
     try {
       verifyToken(info.req, (error, user) => {
         if (error || !user) {
-          return verified(false, 401, "Unauthorized");
+          return verified(false, 401, "Unauthorized")
         }
-        info.req.userId = user.id;
-        verified(true);
+        info.req.userId = user.id
+        verified(true)
       })
     } catch (error) {
-      console.error("verifyClient: ", error);
-      throw error;
+      console.error("verifyClient: ", error)
+      throw error
     }
   }
 
   const wss = new WebSocket.Server({verifyClient, server})
-  const publisher = redis.createClient(redisUrl);
+  const publisher = redis.createClient(redisUrl)
 
   wss.shouldHandle = (req) => {
     const path = url.parse(req.url).pathname
@@ -191,7 +208,7 @@ module.exports = ({secretKey, redisUrl}) => {
     let lastPlayerView = null
     let lastPlayers = null
 
-    const subscriber = redis.createClient(redisUrl);
+    const subscriber = redis.createClient(redisUrl)
     subscriber.subscribe(channelName)
 
     const startGame = async () => {
@@ -214,7 +231,7 @@ module.exports = ({secretKey, redisUrl}) => {
     }
 
     const gameAction = async ([action, ...args]) => {
-      console.log('gameAction', action, args);
+      console.log('gameAction', action, args)
       const tx = await db.sequelize.transaction()
       const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
       if (!session.lastState) {
@@ -260,7 +277,7 @@ module.exports = ({secretKey, redisUrl}) => {
     }
 
     const refresh = async () => {
-      await updateGameState();
+      await updateGameState()
       ws.send(JSON.stringify({type: 'update', data: gameInstance.getPlayerView()}))
     }
 
@@ -268,14 +285,18 @@ module.exports = ({secretKey, redisUrl}) => {
       let message
       try {
         message = JSON.parse(data)
+      } catch(e) {
+        console.error(`invalid json ${data}`)
+      }
 
+      try {
         switch(message.type) {
           case 'startGame': return await startGame()
           case 'action':    return await gameAction(message.payload)
           case 'refresh':   return await refresh()
         }
       } catch(e) {
-        console.error(`invalid json ${data}`)
+        ws.send(JSON.stringify(e))
       }
     })
 
@@ -302,7 +323,7 @@ module.exports = ({secretKey, redisUrl}) => {
       subscriber.unsubscribe()
       subscriber.quit()
       throw error
-    });
+    })
   }
 
   wss.on("connection", onWssConnection)
