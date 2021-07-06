@@ -61,11 +61,12 @@ class GameInterface {
 
   setState(saveData) {
     if (saveData) {
-      this.variables = saveData.variables,
+      this.variables = saveData.variables
       this.players = saveData.players;
       this.currentPlayer = saveData.currentPlayer;
       this.phase = saveData.phase
     }
+    return true
   }
 
   getPlayerView() {

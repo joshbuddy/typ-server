@@ -262,22 +262,24 @@ module.exports = ({secretKey, redisUrl}) => {
 
     const gameAction = async ([action, ...args]) => {
       console.log('gameAction', action, args)
-      const tx = await db.sequelize.transaction()
-      const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
-      if (!session.lastState) {
-        await tx.rollback()
-        return
-      }
 
-      gameInstance.setState(session.lastState)
+      const persist = gameInstance.setState(session.lastState)
       try {
         gameInstance.receiveAction(action, args)
       } catch(e) {
         ws.send(JSON.stringify(e.message))
       }
-      await session.update({lastState: gameInstance.getState()}, {transaction: tx})
-      await session.save()
-      await tx.commit()
+      if (persist) {
+        const tx = await db.sequelize.transaction()
+        const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
+        if (!session.lastState) {
+          await tx.rollback()
+          return
+        }
+        await session.update({lastState: gameInstance.getState()}, {transaction: tx})
+        await session.save()
+        await tx.commit()
+      }
 
       const newPlayerView = gameInstance.getPlayerView()
       if (!_.isEqual(newPlayerView, lastPlayerView)) {

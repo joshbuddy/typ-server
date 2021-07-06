@@ -1,7 +1,7 @@
 {
   "development": {
     "username": "typ",
-    "password": null,
+    "password": "typ",
     "database": "typ_development",
     "host": "127.0.0.1",
     "dialect": "postgres",
@@ -9,7 +9,7 @@
   },
   "test": {
     "username": "typ",
-    "password": null,
+    "password": "typ",
     "database": "typ_test",
     "host": "127.0.0.1",
     "dialect": "postgres",
