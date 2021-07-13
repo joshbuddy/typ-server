@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
   };
   Game.prototype.file = function(f) {
     if (this.getDataValue('localDir')) {
-      return fs.readFileSync(path.join(__dirname, '../games', this.getDataValue('localDir'), f))
+      return fs.readFileSync(path.join(this.getDataValue('localDir'), f))
     } else {
       return this.contentZip.readFile(f)
     }

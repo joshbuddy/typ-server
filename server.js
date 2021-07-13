@@ -10,18 +10,24 @@ const sequelize = require('sequelize')
 const mime = require('mime')
 const { NodeVM } = require('vm2')
 const bcrypt = require('bcrypt')
-const GameInterface = require('./gameInterface')
+const GameInterface = require('./game/interface')
 const db = require('./models')
 const cookieParser = require('cookie-parser')
-const webpack = require('webpack')
-const webpackConfig = require('./webpack.config')
-const webpackCompiler = webpack(webpackConfig)
+const path = require('path')
 
-module.exports = ({secretKey, redisUrl}) => {
+module.exports = ({secretKey, redisUrl, ...devGame }) => {
   const app = express()
   const server = http.createServer(app)
+  let localDevGame, webpackCompiler
+
+  if (devGame.name) {
+    localDevGame = new db.Game({ name: devGame.name, localDir: devGame.path })
+    const webpack = require('./webpack')
+    webpackCompiler = webpack(path.join(devGame.path, 'client/index.js'))
+  }
 
   app.set('view engine', 'ejs')
+  app.set('views', __dirname + '/views')
   app.use(bodyParser.json({limit: '50mb'}))
   app.use(bodyParser.urlencoded({ extended: true }))
   app.use(cookieParser())
@@ -109,6 +115,9 @@ module.exports = ({secretKey, redisUrl}) => {
   app.get('/sessions/new', async (req, res) => {
     if (!req.userId) return unauthorized(req, res, 'permission denied')
     const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']], group: ['name'], raw: true})
+    if (localDevGame) {
+      games.unshift({ maxId: -1, name: localDevGame.get('name') })
+    }
     res.render('sessions-new', {games: games})
   })
 
@@ -121,8 +130,13 @@ module.exports = ({secretKey, redisUrl}) => {
 
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return unauthorized(req, res, 'permission denied')
-    const game = await db.Game.findByPk(req.params.id)
-    const buf = game.file(`/${req.params[0]}`)
+    let game
+    if (req.params.id === -1) {
+      game = localDevGame
+    } else {
+      game = await db.Game.findByPk(req.params.id)
+    }
+    const buf = game.file(`/client/${req.params[0]}`)
     res.type(mime.getType(req.params[0]))
     res.end(buf)
   })
@@ -164,20 +178,20 @@ module.exports = ({secretKey, redisUrl}) => {
     }
   })
 
-  if (process.env.NODE_ENV === 'development') {
+  if (webpackCompiler) {
     app.use(
       require('webpack-dev-middleware')(webpackCompiler, {
-        publicPath: webpackConfig.output.publicPath,
+        publicPath: '/game/',
       }),
     )
 
-    app.use(
-      require('webpack-hot-middleware')(webpackCompiler),
-    )
+    /* app.use(
+     *   require('webpack-hot-middleware')(webpackCompiler),
+     * ) */
   }
 
-  app.use('/game', express.static('dist'))
-
+  app.use('/game', express.static(path.join(__dirname, '/dist')))
+  
   const verifyClient = async (info, verified) => {
     cookieParser()(info.req, null, () => {})
     try {

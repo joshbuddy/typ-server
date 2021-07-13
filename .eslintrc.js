@@ -8,6 +8,7 @@ module.exports = {
   "globals": {
     "process": "readonly",
     "Atomics": "readonly",
+    "Buffer": "readonly",
     "SharedArrayBuffer": "readonly"
   },
   "parserOptions": {

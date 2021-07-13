@@ -71,8 +71,8 @@ describe("Server", () => {
 
     it("should allow creating a new game", (done) => {
       const gameZip = new AdmZip()
-      gameZip.addFile("server.js", fs.readFileSync(__dirname + "/../games/numberGuesser/server.js"));
-      gameZip.addFile("index.js", fs.readFileSync(__dirname + "/../games/numberGuesser/index.js"));
+      gameZip.addFile("server.js", fs.readFileSync(__dirname + "/fixtures/numberGuesser/server.js"));
+      gameZip.addFile("index.js", fs.readFileSync(__dirname + "/fixtures/numberGuesser/client/index.js"));
 
       request.post("http://localhost:3000/games", {json: {name: 'hey', content: gameZip.toBuffer().toString('base64')}, headers: this.headers}, (error, response, body) => {
         assert(!error, "no error")
@@ -83,7 +83,7 @@ describe("Server", () => {
 
     context("with a game", () => {
       beforeEach(async () => {
-        this.game = await db.Game.create({name: "hey", localDir: 'numberGuesser'})
+        this.game = await db.Game.create({name: "hey", localDir: __dirname + '/fixtures/numberGuesser'})
       })
 
       it("should allow creating a session", (done) => {
@@ -96,7 +96,7 @@ describe("Server", () => {
 
       it("should allow getting a specific asset", (done) => {
         request.get(`http://localhost:3000/games/${this.game.id}/index.js`,{headers: this.headers}, (error, response, body) => {
-          assert.equal(body, fs.readFileSync(__dirname + "/../games/numberGuesser/index.js"))
+          assert.equal(body, fs.readFileSync(__dirname + "/fixtures/numberGuesser/client/index.js"))
           done()
         })
       })
