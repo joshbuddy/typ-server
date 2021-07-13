@@ -6,8 +6,7 @@ const config = {
 
   entry: {
     app: [
-      '/Users/ahull/typ-sample-game/client/index.js', // default-path-will-be-overwritten
-      /* 'webpack-hot-middleware/client?reload=true', */
+      'default-path-will-be-overwritten',
     ],
   },
 
@@ -17,13 +16,9 @@ const config = {
     publicPath: '/game/'
   },
 
-  /* watchOptions: {
-   *   ignored: ['node_modules/', 'views/', 'dist/']
-   * }, */
-
-  /* plugins: [
-   *   new webpack.HotModuleReplacementPlugin(),
-   * ], */
+  watchOptions: {
+    ignored: ['node_modules/', 'views/', 'dist/']
+  },
 
   module: {
     rules: [
@@ -55,5 +50,8 @@ const config = {
 };
 
 module.exports = entry => {
-  return webpack(Object.assign({}, config, { entry: {app: [entry] }}));
+  const localConfig = Object.assign({}, config);
+  localConfig.entry.app[0] = entry;
+  console.log(localConfig);
+  return webpack(localConfig);
 }

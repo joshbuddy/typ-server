@@ -184,10 +184,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
         publicPath: '/game/',
       }),
     )
-
-    /* app.use(
-     *   require('webpack-hot-middleware')(webpackCompiler),
-     * ) */
   }
 
   app.use('/game', express.static(path.join(__dirname, '/dist')))
