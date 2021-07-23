@@ -1,4 +1,4 @@
-/* global describe, beforeEach, afterEach, it */
+/* global describe, it, beforeEach, afterEach, __dirname */
 
 const WebSocket = require('ws')
 const jwt = require("jsonwebtoken");

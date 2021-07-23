@@ -86,7 +86,7 @@ class GameElement {
   }
 
   serialize() {
-    return `GameElement(${JSON.stringify(this.branch())})`;
+    return `GameElement(${this.branch.join('-')})`;
   }
 
   static deserialize(doc, args) {

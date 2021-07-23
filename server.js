@@ -6,7 +6,7 @@ const http = require("http")
 const redis = require("redis")
 const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
-const sequelize = require('sequelize')
+const { Sequelize } = require('sequelize')
 const mime = require('mime')
 const { NodeVM } = require('vm2')
 const bcrypt = require('bcrypt')
@@ -114,9 +114,9 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
   app.get('/sessions/new', async (req, res) => {
     if (!req.userId) return unauthorized(req, res, 'permission denied')
-    const games = await db.Game.findAll({attributes: ['name', [sequelize.fn('max', sequelize.col('id')), 'maxId']], group: ['name'], raw: true})
+    const games = await db.Game.findAll({attributes: ['name', [Sequelize.fn('max', Sequelize.col('id')), 'maxId']], group: ['name'], raw: true})
     if (localDevGame) {
-      games.unshift({ maxId: -1, name: localDevGame.get('name') })
+      games.unshift({maxId: -1, name: localDevGame.get('name')})
     }
     res.render('sessions-new', {games: games})
   })
@@ -131,14 +131,21 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
   app.get('/games/:id/*', async (req, res) => {
     if (!req.userId) return unauthorized(req, res, 'permission denied')
     let game
-    if (req.params.id === -1) {
+    if (req.params.id === "local") {
       game = localDevGame
     } else {
       game = await db.Game.findByPk(req.params.id)
     }
-    const buf = game.file(`/client/${req.params[0]}`)
-    res.type(mime.getType(req.params[0]))
-    res.end(buf)
+    if (!game) {
+      res.status(404).end('No such game')
+    }
+    if (!req.params[0]) {
+      res.render('client', {player: req.userId, entry: req.params.id === "local" ? '/local-game/index.js' : 'index.js'})
+    } else {
+      const buf = game.file(`/client/${req.params[0]}`)
+      res.type(mime.getType(req.params[0]))
+      res.end(buf)
+    }
   })
 
   app.post('/sessions', async (req, res) => {
@@ -181,12 +188,17 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
   if (webpackCompiler) {
     app.use(
       require('webpack-dev-middleware')(webpackCompiler, {
-        publicPath: '/game/',
+        publicPath: '/local-game/',
       }),
     )
   }
 
-  app.use('/game', express.static(path.join(__dirname, '/dist')))
+  app.get('/play', async (req, res) => {
+    const sessions = await db.Session.findAll({ include: [db.Game, {model: db.User, as: 'creator'}] })
+    res.render('index', {sessions: sessions})
+  })
+
+  app.use('/local-game', express.static(path.join(__dirname, '/dist')))
   
   const verifyClient = async (info, verified) => {
     cookieParser()(info.req, null, () => {})
@@ -220,7 +232,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
   }
 
   const onWssConnection = async (ws, req) => {
-    let sessionUser = await db.SessionUser.findOne({where: {userId: req.userId, sessionId: req.sessionId}})
+    const sessionUser = await db.SessionUser.findOne({where: {userId: req.userId, sessionId: req.sessionId}})
     if (!sessionUser) {
       return ws.close(4001)
     }
@@ -239,7 +251,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const serverBuffer = game.file("/server.js")
     vm.run(serverBuffer.toString())
-    const channelName = `session-${sessionUser.sessionId}`
+    const channelName = `session-${session.id}`
     let lastPlayerView = null
     let lastPlayers = null
 
@@ -247,27 +259,24 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     subscriber.subscribe(channelName)
 
     const startGame = async () => {
-      const tx = await db.sequelize.transaction()
-      const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
-      if (session.lastState && session.lastState.phase !== 'setup') {
-        await tx.rollback()
-        return
-      }
-      try {
-        gameInstance.start()
-        await session.update({lastState: gameInstance.getState()}, {transaction: tx})
-        await session.save({transaction: tx})
-      } catch(e) {
-        return ws.send(JSON.stringify(e.message))
-      } finally {
-        await tx.commit()
-      }
-      const newPlayerView = gameInstance.getPlayerView()
-      if (!_.isEqual(newPlayerView, lastPlayerView)) {
-        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
-        lastPlayerView = newPlayerView
-      }
-      await publisher.publish(channelName, JSON.stringify({type: 'state'}))
+      await db.sequelize.transaction(async transaction => {
+        await session.reload()
+        if (session.lastState && session.lastState.phase !== 'setup') {
+          throw new Error("Cannot start game unless setup phase")
+        }
+        try {
+          gameInstance.start()
+          await session.update({lastState: gameInstance.getState()}, {transaction})
+        } catch(e) {
+          return ws.send(JSON.stringify(e.message))
+        }
+        const newPlayerView = gameInstance.getPlayerView()
+        if (!_.isEqual(newPlayerView, lastPlayerView)) {
+          ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
+          lastPlayerView = newPlayerView
+        }
+        await publisher.publish(channelName, JSON.stringify({type: 'state'}))
+      })
     }
 
     const gameAction = async ([action, ...args]) => {
@@ -280,15 +289,12 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
         ws.send(JSON.stringify(e.message))
       }
       if (persist) {
-        const tx = await db.sequelize.transaction()
-        const session = await db.Session.findByPk(sessionUser.sessionId, {transaction: tx, lock: {of: db.Session}})
-        if (!session.lastState) {
-          await tx.rollback()
-          return
-        }
-        await session.update({lastState: gameInstance.getState()}, {transaction: tx})
-        await session.save()
-        await tx.commit()
+        await db.sequelize.transaction(async transaction => {
+          if (!session.lastState) {
+            throw new Error("No lastState")
+          }
+          await session.update({lastState: gameInstance.getState()}, {transaction})
+        })
       }
 
       const newPlayerView = gameInstance.getPlayerView()
@@ -302,7 +308,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const updateGamePlayers = async () => {
       const sessionUsers = await db.SessionUser.findAll({
-        where: {sessionId: sessionUser.sessionId},
+        where: {sessionId: session.id},
         order: [['userId']],
         include: {
           model: db.User,
@@ -329,9 +335,30 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       }
     }
 
+    const updateLocks = async () => {
+      const locks = await session.getElementLocks()
+      ws.send(JSON.stringify({type: 'updateLocks', data: locks.map(lock => ({user: lock.userId, key: lock.element}))}))
+    }
+
     const refresh = async () => {
       await updateGameState()
       ws.send(JSON.stringify({type: 'update', data: gameInstance.getPlayerView()}))
+    }
+
+    const requestLock = async ({key}) => {
+      try {
+        await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key })
+      } catch (e) {
+        if (!(e instanceof db.Sequelize.UniqueConstraintError)) {
+          throw e
+        }
+      }
+      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
+    }
+
+    const releaseLock = async ({key}) => {
+      await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
+      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
     }
 
     ws.on("message", async (data) => {
@@ -341,12 +368,14 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       } catch(e) {
         console.error(`invalid json ${data}`)
       }
-      console.log('onmessage', message)
+      console.log('--> onmessage', req.userId, message)
 
       switch(message.type) {
         case 'startGame': return await startGame()
         case 'action':    return await gameAction(message.payload)
         case 'refresh':   return await refresh()
+        case 'requestLock':   return await requestLock(message.payload)
+        case 'releaseLock':   return await releaseLock(message.payload)
       }
     })
 
@@ -361,6 +390,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       switch (message.type) {
         case 'players': return await updateGamePlayers()
         case 'state':   return await updateGameState()
+        case 'locks':   return await updateLocks()
       }
     })
 
