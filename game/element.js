@@ -89,8 +89,12 @@ class GameElement {
     return `GameElement(${this.branch.join('-')})`;
   }
 
+  pieceAt(key) {
+    return GameElement.deserialize(this.board(), key.split('-'));
+  }
+
   static deserialize(doc, args) {
-    return doc.find(args.reduce((path, index) => `${path} > *:nth-child(${index})`, 'game'), null);
+    return doc.find(args.reduce((path, index) => `${path} > *:nth-child(${index})`, 'game'));
   }
 
   toString() {

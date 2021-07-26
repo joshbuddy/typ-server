@@ -14,13 +14,13 @@ class Space extends GameElement {
 
   findNode(q = '*') {
     if (q === null) return null;
-    if (q instanceof Node) return q;
+    //if (q instanceof Node) return q;
     return (this.boardNode() === this.node ? this.doc : this.node).querySelector(this._enhanceQuery(q));
   }
 
   findNodes(q = '*') {
     if (q === null) return [];
-    if (q instanceof NodeList) return q;
+    //if (q instanceof NodeList) return q;
     return (this.boardNode() === this.node ? this.doc : this.node).querySelectorAll(this._enhanceQuery(q));
   }
 
@@ -48,7 +48,7 @@ class Space extends GameElement {
   }
 
   space(q) {
-    if (q instanceof Node) return this.wrap(q);
+    //if (q instanceof Node) return this.wrap(q);
     if (q instanceof Space) return q;
     return this.spaces(q)[0];
   }
@@ -59,7 +59,7 @@ class Space extends GameElement {
   }
 
   piece(q) {
-    if (q instanceof Node) return this.wrap(q);
+    //if (q instanceof Node) return this.wrap(q);
     if (q instanceof Piece) return q;
     return this.pieces(q)[0];
   }

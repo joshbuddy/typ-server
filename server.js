@@ -247,13 +247,18 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     })
 
     const session = await sessionUser.getSession()
-    const game = await session.getGame()
+    const game = session.gameId === -1 ? localDevGame : await session.getGame()
 
     const serverBuffer = game.file("/server.js")
     vm.run(serverBuffer.toString())
     const channelName = `session-${session.id}`
     let lastPlayerView = null
     let lastPlayers = null
+    let locks = []
+
+    if (session.lastState) {
+      gameInstance.setState(session.lastState)
+    }
 
     const subscriber = redis.createClient(redisUrl)
     subscriber.subscribe(channelName)
@@ -336,8 +341,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     }
 
     const updateLocks = async () => {
-      const locks = await session.getElementLocks()
-      ws.send(JSON.stringify({type: 'updateLocks', data: locks.map(lock => ({user: lock.userId, key: lock.element}))}))
+      locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
+      ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
     }
 
     const refresh = async () => {
@@ -347,6 +352,11 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const requestLock = async ({key}) => {
       try {
+        await db.ElementLock.destroy({where: {
+          sessionId: session.id,
+          element: key,
+          updatedAt: {[Sequelize.Op.lt]: new Date() - 60000}
+        }})
         await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key })
       } catch (e) {
         if (!(e instanceof db.Sequelize.UniqueConstraintError)) {
@@ -361,6 +371,18 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
     }
 
+    const drag = ({key, x, y}) => {
+      const lock = locks.find(lock => lock.key == key)
+      console.log('drag', lock, sessionUser.userId)
+      if (!lock || lock.user != sessionUser.userId) return
+      publisher.publish(channelName, JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+    }
+
+    const updateElement = ({user, key, x, y}) => {
+      if (user == sessionUser.userId) return
+      ws.send(JSON.stringify({type: 'updateElement', data: {key, x, y}}))
+    }
+
     ws.on("message", async (data) => {
       let message
       try {
@@ -372,10 +394,11 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
       switch(message.type) {
         case 'startGame': return await startGame()
-        case 'action':    return await gameAction(message.payload)
-        case 'refresh':   return await refresh()
-        case 'requestLock':   return await requestLock(message.payload)
-        case 'releaseLock':   return await releaseLock(message.payload)
+        case 'action': return await gameAction(message.payload)
+        case 'refresh': return await refresh()
+        case 'requestLock': return await requestLock(message.payload)
+        case 'releaseLock': return await releaseLock(message.payload)
+        case 'drag': return await drag(message.payload)
       }
     })
 
@@ -391,6 +414,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
         case 'players': return await updateGamePlayers()
         case 'state':   return await updateGameState()
         case 'locks':   return await updateLocks()
+        case 'drag':   return await updateElement(message)
       }
     })
 

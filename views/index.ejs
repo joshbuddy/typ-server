@@ -5,7 +5,7 @@
      <% sessions.forEach(session => { %>
        <li>
          <a href="/sessions/<%= session.id %>">
-           <%=session.Game.name %>
+           <%=session.gameId === -1 ? 'Local Game' : session.Game.name %>
          </a>
          <%=session.creator.name %> <%=session.lastState && session.lastState.phase %> <%=session.createdAt %>
        </li>

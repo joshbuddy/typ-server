@@ -1,15 +1,8 @@
-locks
-player, session, element, updated_at
-on release save x,y in state
-on drag publish x,y
-
-
 secure session/player var tampering
 
 - start qa list
   - send choices to client
   - display choices
-- allow element locking
 
 - auto-reconnect
 - connection status

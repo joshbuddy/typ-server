@@ -15,7 +15,8 @@ class GameInterface {
 
   start() {
     if (this.players.length < this.minPlayers) throw Error("not enough players")
-    this.variables = this.initialVariables || {};
+    this.variables = this.initialVariables || {}
+    this.setup && this.setup()
     this.currentPlayer = 0
     this.phase = 'playing'
   }
@@ -36,7 +37,7 @@ class GameInterface {
   }
 
   set(key, value) {
-    this.variables[key] = value;
+    this.variables[key] = value
   }
 
   delete(key) {
@@ -61,24 +62,24 @@ class GameInterface {
       players: this.players,
       currentPlayer: this.currentPlayer,
       phase: this.phase,
-      doc: this.doc.outerHTML,
+      doc: this.doc.node.innerHTML,
     }
   }
 
   setState(state) {
     if (state) {
-      this.variables = state.variables;
-      this.players = state.players;
-      this.currentPlayer = state.currentPlayer;
+      this.variables = state.variables
+      this.players = state.players
+      this.currentPlayer = state.currentPlayer
       this.phase = state.phase
-      this.doc.outerHTML = state.doc
+      this.doc.node.innerHTML = state.doc
     }
     return true
   }
 
   getPlayerView() {
-    const playerView = this.doc.clone();
-    playerView.findNodes(this.hidden()).forEach(n => n.replaceWith(document.createElement(n.nodeName)));
+    const playerView = this.doc.clone()
+    playerView.findNodes(this.hidden()).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
 
     return {
       variables: this.shownVariables(),
@@ -91,16 +92,25 @@ class GameInterface {
   }
 
   hidden() {
-    return null;
+    return null
   }
 
   receiveAction(action, args) {
     console.log('receiveAction', this.phase, this.currentPlayer, this.player)
     if (this.phase !== 'playing') throw Error("game not active")
-    if (this.currentPlayer !== this.player) throw Error("it's not your turn")
+    // if (this.currentPlayer !== this.player) throw Error("it's not your turn")
+    if (action === '_moveElement') {
+      this.moveElement(...args)
+    }
     if (this.moves[action]) {
       this.moves[action].apply(this, args)
     }
+  }
+
+  moveElement(key, x, y) {
+    const el = this.board.pieceAt(key)
+    el.set('x', x)
+    el.set('y', y)
   }
 
   endTurn() {
