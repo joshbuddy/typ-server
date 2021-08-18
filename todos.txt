@@ -1,0 +1,10 @@
+secure session/player var tampering
+
+- start qa list
+  - send choices to client
+  - display choices
+
+- auto-reconnect
+- connection status
+- show errors from server
+- fix players full

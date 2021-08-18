@@ -1,12 +1,17 @@
 <html>
-<body>
-<h1>Sessions</h1>
-<ul>
-<% sessions.forEach(session => { %>
-  <li><%=session.game.name %> <%=session.ownerId %> <%=session.createdAt %></li>
-<% }) %>
-</ul>
+  <body>
+   <h1>Sessions</h1>
+   <ul>
+     <% sessions.forEach(session => { %>
+       <li>
+         <a href="/sessions/<%= session.id %>">
+           <%=session.gameId === -1 ? 'Local Game' : session.Game.name %>
+         </a>
+         <%=session.creator.name %> <%=session.lastState && session.lastState.phase %> <%=session.createdAt %>
+       </li>
+     <% }) %>
+   </ul>
 
-<p><a href="/sessions/new">create session</a></p>
-</body>
-</html
+   <p><a href="/sessions/new">create session</a></p>
+  </body>
+</html>

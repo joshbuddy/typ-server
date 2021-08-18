@@ -1,10 +1,10 @@
-const fs = require('fs')
+/* global describe, it, beforeEach, afterEach, __dirname */
+
 const WebSocket = require('ws')
 const jwt = require("jsonwebtoken");
-const assert = require('assert')
 const createServer = require('../server')
 const db = require('../models')
-const AdmZip = require('adm-zip')
+const path = require('path')
 
 const SECRET_KEY = "asdasdasd"
 
@@ -36,10 +36,7 @@ describe("Playing a game", () => {
     const user2 = await db.User.create({email: "hello2@asdf.com", password: "some-pass2", name: "asd2"})
     this.h1 = {authorization: `JWT ${jwt.sign({id: user1.id}, SECRET_KEY)}`}
     this.h2 = {authorization: `JWT ${jwt.sign({id: user2.id}, SECRET_KEY)}`}
-    const gameZip = new AdmZip()
-    gameZip.addFile("/server.js", fs.readFileSync(__dirname + "/fixture/server.js"));
-    gameZip.addFile("/index.js", fs.readFileSync(__dirname + "/fixture/index.js"));
-    this.game = await db.Game.create({name: "hey", content: gameZip.toBuffer()})
+    this.game = await db.Game.create({name: "hey", localDir: path.join(__dirname, 'fixtures/numberGuesser')})
     this.session = await db.Session.create({gameId: this.game.id, creatorId: user1.id})
 
     await db.SessionUser.create({sessionId: this.session.id, userId: user1.id})
@@ -59,11 +56,12 @@ describe("Playing a game", () => {
     const guesser = (socket, playerIndex) => {
       return (data) => {
         const message = JSON.parse(data)
-        if (message.type !== 'state') return
-        if (message.state.stage === 'finished') return socket.close()
-        if (message.state.currentPlayerIndex !== playerIndex) return
+        if (message.type !== 'update') return
+        if (message.data.phase === 'finished') return socket.close()
+        if (message.data.phase !== 'playing') return
+        if (message.data.currentPlayer !== playerIndex) return
         const guess = Math.floor(Math.random() * 10) + 1
-        socket.send(JSON.stringify({type: "action", "action": {"guess": guess}}))
+        socket.send(JSON.stringify({type: "action", "payload": ["guess", guess]}))
       }
     }
 
