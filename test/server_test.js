@@ -1,4 +1,4 @@
-/* global context, describe, it, beforeEach, afterEach, __dirname */
+/* global context, describe, it, beforeEach, afterEach */
 
 const fs = require('fs')
 const WebSocket = require('ws')

@@ -1,7 +1,6 @@
 module.exports = {
   "env": {
     "node": true,
-    "es6": true,
   },
   "extends": "eslint:recommended",
   "globals": {
@@ -11,11 +10,15 @@ module.exports = {
     "SharedArrayBuffer": "readonly"
   },
   "parserOptions": {
+    "ecmaFeatures": {
+      "jsx": true
+    },
     "ecmaVersion": 2018
   },
   "plugins": [
     "react"
   ],
   "rules": {
+    "no-unused-vars": "off"
   }
 };

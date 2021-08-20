@@ -1,4 +1,3 @@
-const _ = require('lodash')
 const url = require('url')
 const WebSocket = require("ws")
 const express = require("express")
@@ -17,6 +16,8 @@ const path = require('path')
 module.exports = ({secretKey, redisUrl, ...devGame }) => {
   const app = express()
   const server = http.createServer(app)
+  const redisClient = redis.createClient(redisUrl)
+
   let localDevGame, webpackCompiler
 
   if (devGame.name) {
@@ -50,7 +51,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
   function verifyToken(req, callback) {
     let token = null
-    if (req.headers.hasOwnProperty("authorization")) {
+    if (req.headers["authorization"]) {
       token = req.headers.authorization.replace("JWT ", "")
     } else if (req.cookies && req.cookies.jwt) {
       token = req.cookies.jwt
@@ -223,7 +224,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
   wss.shouldHandle = (req) => {
     const path = url.parse(req.url).pathname
-    const match = path.match(/\/sessions\/([^\/]+)/)
+    const match = path.match(/\/sessions\/([^/]+)/)
     if (match) {
       req.sessionId = match[1]
       return true
@@ -237,7 +238,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     if (!sessionUser) {
       return ws.close(4001)
     }
-
+    const session = await sessionUser.getSession()
+    const locks = []
     let lastPlayerView = null
 
     const sendPlayerView = async () => {
@@ -249,7 +251,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     }
 
     const sendPlayerLocks = async () => {
-      // ... implement!
+      const locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
+      ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
     }
 
     const requestLock = async (key) => {
@@ -259,27 +262,26 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
           element: key,
           updatedAt: {[Sequelize.Op.lt]: new Date() - 60000}
         }})
-        await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key })
+        locks.push(await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key }))
       } catch (e) {
         if (!(e instanceof db.Sequelize.UniqueConstraintError)) {
           throw e
         }
       }
-      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
+      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
     }
 
     const releaseLock = async (key) => {
       await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
-      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
+      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
     }
 
     const drag = ({key, x, y}) => {
       const lock = locks.find(lock => lock.key == key)
       console.log('drag', lock, sessionUser.userId)
       if (!lock || lock.user != sessionUser.userId) return
-      publisher.publish(channelName, JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+      publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
     }
-
 
     gameRunner.startSession(session.id).catch(error => {
       console.error("error starting session!", error)
@@ -293,13 +295,13 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       switch(message.type) {
         case 'requestLock': return await requestLock(message.key)
         case 'releaseLock': return await releaseLock(message.key)
-        case 'drag': return publisher.publish(sessionEventKey, data)
+        case 'drag': return await drag(message)
         default: return await redisClient.rpush(sessionEventKey, JSON.stringify({playerId: req.userId, ...message}))
       }
     })
 
     const subscriber = redis.createClient(redisUrl)
-    subscriber.subscribe(channelName)
+    subscriber.subscribe(gameRunner.sessionEventKey(session.id))
     subscriber.on("message", async (channel, data) => {
       const message = JSON.parse(data)
       switch (message.type) {

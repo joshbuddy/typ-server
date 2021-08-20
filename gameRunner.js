@@ -9,7 +9,7 @@ class GameRunner {
   constructor(redisUrl, localDevGame) {
     this.redisUrl = redisUrl
     this.localDevGame = localDevGame
-    this.runningSessionIds = Set()
+    this.runningSessionIds = new Set()
     this.redisClient = redis.createClient(redisUrl)
   }
 
@@ -100,7 +100,7 @@ class GameRunner {
         while (this.runningSessionIds.has(sessionId)) {
           let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           while (timeRemaining > 0) {
-            const event = await redis.blpop(sessionEventKey(sessionId), timeRemaining)
+            const event = await redis.blpop(this.sessionEventKey(sessionId), timeRemaining)
             await processGameEvent(event)
             timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           }
