@@ -13,13 +13,16 @@ class GameRunner {
     this.redisClient = redis.createClient(redisUrl)
   }
 
+  sessionEventKey(sessionId) {
+    return `session-events-${sessionId}`
+  }
+
   async startSession(sessionId) {
     if (this.runningSessionIds.has(sessionId)) return
     this.runningSessionIds.add(sessionId)
 
     const lockLeaseTime = 10000
-    const sessionLockName = `session-lock-${sessionId}`
-    const sessionEventKey = `session-events-${sessionId}`
+    const sessionLockKey = `session-lock-${sessionId}`
     const redlock = new Redlock(
       // You should have one client for each independent redis node
       // or cluster.
@@ -33,7 +36,7 @@ class GameRunner {
     while(this.runningSessionIds.has(sessionId)) {
       let lock
       try {
-        lock = await redlock.acquire([sessionLockName], lockLeaseTime)
+        lock = await redlock.acquire([sessionLockKey], lockLeaseTime)
         let lastLockTime = new Date().getTime()
         const session = await db.Session.findByPk(sessionId)
         const game = session.gameId === -1 ? this.localDevGame : await session.getGame()
@@ -97,7 +100,7 @@ class GameRunner {
         while (this.runningSessionIds.has(sessionId)) {
           let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           while (timeRemaining > 0) {
-            const event = await redis.blpop(sessionEventKey, timeRemaining)
+            const event = await redis.blpop(sessionEventKey(sessionId), timeRemaining)
             await processGameEvent(event)
             timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           }
@@ -115,7 +118,6 @@ class GameRunner {
   async stopSession(sessionId) {
     this.runningSessionIds.remove(sessionId)
   }
-
 }
 
 module.exports = GameRunner

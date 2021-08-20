@@ -248,20 +248,65 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       }
     }
 
+    const sendPlayerLocks = async () => {
+      // ... implement!
+    }
+
+    const requestLock = async (key) => {
+      try {
+        await db.ElementLock.destroy({where: {
+          sessionId: session.id,
+          element: key,
+          updatedAt: {[Sequelize.Op.lt]: new Date() - 60000}
+        }})
+        await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key })
+      } catch (e) {
+        if (!(e instanceof db.Sequelize.UniqueConstraintError)) {
+          throw e
+        }
+      }
+      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
+    }
+
+    const releaseLock = async (key) => {
+      await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
+      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
+    }
+
+    const drag = ({key, x, y}) => {
+      const lock = locks.find(lock => lock.key == key)
+      console.log('drag', lock, sessionUser.userId)
+      if (!lock || lock.user != sessionUser.userId) return
+      publisher.publish(channelName, JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+    }
+
+
     gameRunner.startSession(session.id).catch(error => {
       console.error("error starting session!", error)
+      return ws.close(1011) // internal error
     })
 
-    const sessionEventKey = `session-events-${sessionId}`
+    const sessionEventKey = gameRunner.sessionEventKey(req.sessionId)
     ws.on('message', async (data) => {
       const message = JSON.parse(data)
-      await redisClient.push(sessionEventKey, {playerId: req.userId, ...message})
+
+      switch(message.type) {
+        case 'requestLock': return await requestLock(message.key)
+        case 'releaseLock': return await releaseLock(message.key)
+        case 'drag': return publisher.publish(sessionEventKey, data)
+        default: return await redisClient.rpush(sessionEventKey, JSON.stringify({playerId: req.userId, ...message}))
+      }
     })
 
     const subscriber = redis.createClient(redisUrl)
     subscriber.subscribe(channelName)
     subscriber.on("message", async (channel, data) => {
-      await sendPlayerView()
+      const message = JSON.parse(data)
+      switch (message.type) {
+        case 'state': return await sendPlayerView()
+        case 'locks': return await sendPlayerLocks()
+        default: return ws.send(data)
+      }
     })
 
     ws.on("close", () => {
