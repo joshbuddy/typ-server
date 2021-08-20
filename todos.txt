@@ -8,3 +8,10 @@ secure session/player var tampering
 - connection status
 - show errors from server
 - fix players full
+
+
+
+/////
+
+every server tries to acquire a lock
+the one that wins creates a game instance and starts consuming events from redis

@@ -8,10 +8,9 @@ const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const { Sequelize } = require('sequelize')
 const mime = require('mime')
-const { NodeVM } = require('vm2')
 const bcrypt = require('bcrypt')
-const GameInterface = require('./game/interface')
 const db = require('./models')
+const GameRunner = require('./gameRunner')
 const cookieParser = require('cookie-parser')
 const path = require('path')
 
@@ -25,6 +24,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     const webpack = require('./webpack')
     webpackCompiler = webpack(path.join(devGame.path, 'client/index.js'))
   }
+
+  const gameRunner = new GameRunner(redisUrl, localDevGame)
 
   app.set('view engine', 'ejs')
   app.set('views', __dirname + '/views')
@@ -237,199 +238,47 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       return ws.close(4001)
     }
 
-    const gameInstance = new GameInterface(req.userId)
-    const vm = new NodeVM({
-      console: 'inherit',
-      sandbox: {game: gameInstance},
-      require: {
-        external: true,
-      },
+    let lastPlayerView = null
+
+    const sendPlayerView = async () => {
+      const data = await redisClient.get(`session-player-state-${req.sessionId}-${req.userId}`)
+      if (data !== lastPlayerView) {
+        ws.send(data)
+        lastPlayerView = data
+      }
+    }
+
+    gameRunner.startSession(session.id).catch(error => {
+      console.error("error starting session!", error)
     })
 
-    const session = await sessionUser.getSession()
-    const game = session.gameId === -1 ? localDevGame : await session.getGame()
-
-    const serverBuffer = game.file("/server.js")
-    vm.run(serverBuffer.toString())
-    const channelName = `session-${session.id}`
-    let lastPlayerView = null
-    let lastPlayers = null
-    let locks = []
-
-    if (session.lastState) {
-      gameInstance.setState(session.lastState)
-    }
+    const sessionEventKey = `session-events-${sessionId}`
+    ws.on('message', async (data) => {
+      const message = JSON.parse(data)
+      await redisClient.push(sessionEventKey, {playerId: req.userId, ...message})
+    })
 
     const subscriber = redis.createClient(redisUrl)
     subscriber.subscribe(channelName)
-
-    const startGame = async () => {
-      await db.sequelize.transaction(async transaction => {
-        await session.reload()
-        if (session.lastState && session.lastState.phase !== 'setup') {
-          throw new Error("Cannot start game unless setup phase")
-        }
-        try {
-          gameInstance.start()
-          await session.update({lastState: gameInstance.getState()}, {transaction})
-        } catch(e) {
-          return ws.send(JSON.stringify(e.message))
-        }
-        const newPlayerView = gameInstance.getPlayerView()
-        if (!_.isEqual(newPlayerView, lastPlayerView)) {
-          ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
-          lastPlayerView = newPlayerView
-        }
-        await publisher.publish(channelName, JSON.stringify({type: 'state'}))
-      })
-    }
-
-    const gameAction = async ([action, ...args]) => {
-      console.log('gameAction', action, args)
-
-      const persist = gameInstance.setState(session.lastState)
-      try {
-        gameInstance.receiveAction(action, args)
-      } catch(e) {
-        ws.send(JSON.stringify(e.message))
-      }
-      if (persist) {
-        await db.sequelize.transaction(async transaction => {
-          if (!session.lastState) {
-            throw new Error("No lastState")
-          }
-          await session.update({lastState: gameInstance.getState()}, {transaction})
-        })
-      }
-
-      const newPlayerView = gameInstance.getPlayerView()
-      if (!_.isEqual(newPlayerView, lastPlayerView)) {
-        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
-        lastPlayerView = newPlayerView
-      }
-
-      await publisher.publish(channelName, JSON.stringify({type: 'state'}))
-    }
-
-    const updateGamePlayers = async () => {
-      const sessionUsers = await db.SessionUser.findAll({
-        where: {sessionId: session.id},
-        order: [['userId']],
-        include: {
-          model: db.User,
-          attributes: ['id', 'name'],
-        },
-      })
-      const users = sessionUsers.map(s => s.User)
-      users.forEach(u => {
-        gameInstance.addPlayer(u.id)
-      })
-      if (!_.isEqual(lastPlayers, users)) {
-        ws.send(JSON.stringify({type: 'players', players: users}))
-        lastPlayers = users
-      }
-    }
-
-    const updateGameState = async () => {
-      await session.reload()
-      gameInstance.setState(session.lastState)
-      const newPlayerView = gameInstance.getPlayerView()
-      if (!_.isEqual(newPlayerView, lastPlayerView)) {
-        ws.send(JSON.stringify({type: 'update', data: newPlayerView}))
-        lastPlayerView = newPlayerView
-      }
-    }
-
-    const updateLocks = async () => {
-      locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
-      ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
-    }
-
-    const refresh = async () => {
-      await updateGameState()
-      ws.send(JSON.stringify({type: 'update', data: gameInstance.getPlayerView()}))
-    }
-
-    const requestLock = async ({key}) => {
-      try {
-        await db.ElementLock.destroy({where: {
-          sessionId: session.id,
-          element: key,
-          updatedAt: {[Sequelize.Op.lt]: new Date() - 60000}
-        }})
-        await db.ElementLock.create({ sessionId: session.id, userId: sessionUser.userId, element: key })
-      } catch (e) {
-        if (!(e instanceof db.Sequelize.UniqueConstraintError)) {
-          throw e
-        }
-      }
-      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
-    }
-
-    const releaseLock = async ({key}) => {
-      await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
-      await publisher.publish(channelName, JSON.stringify({type: 'locks'}))
-    }
-
-    const drag = ({key, x, y}) => {
-      const lock = locks.find(lock => lock.key == key)
-      console.log('drag', lock, sessionUser.userId)
-      if (!lock || lock.user != sessionUser.userId) return
-      publisher.publish(channelName, JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
-    }
-
-    const updateElement = ({user, key, x, y}) => {
-      if (user == sessionUser.userId) return
-      ws.send(JSON.stringify({type: 'updateElement', data: {key, x, y}}))
-    }
-
-    ws.on("message", async (data) => {
-      let message
-      try {
-        message = JSON.parse(data)
-      } catch(e) {
-        console.error(`invalid json ${data}`)
-      }
-      console.log('--> onmessage', req.userId, message)
-
-      switch(message.type) {
-        case 'startGame': return await startGame()
-        case 'action': return await gameAction(message.payload)
-        case 'refresh': return await refresh()
-        case 'requestLock': return await requestLock(message.payload)
-        case 'releaseLock': return await releaseLock(message.payload)
-        case 'drag': return await drag(message.payload)
-      }
-    })
-
-    await updateGamePlayers()
-    await updateGameState()
-
-    // redis
-    //   needs an update when players change
-    //   needs an update when state changes
     subscriber.on("message", async (channel, data) => {
-      const message = JSON.parse(data)
-      switch (message.type) {
-        case 'players': return await updateGamePlayers()
-        case 'state':   return await updateGameState()
-        case 'locks':   return await updateLocks()
-        case 'drag':   return await updateElement(message)
-      }
+      await sendPlayerView()
     })
 
     ws.on("close", () => {
       subscriber.unsubscribe()
       subscriber.quit()
+      gameRunner.stopSession(session.id)
     })
 
     ws.on("error", error => {
       subscriber.unsubscribe()
       subscriber.quit()
+      gameRunner.stopSession(session.id)
       throw error
     })
-  }
 
+    await sendPlayerView()
+  }
   wss.on("connection", onWssConnection)
 
   return server

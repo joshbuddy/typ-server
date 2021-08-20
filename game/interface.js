@@ -1,8 +1,7 @@
 const GameDocument = require('./document');
 
 class GameInterface {
-  constructor(playerId) {
-    this.playerId = playerId
+  constructor() {
     this.players = []
     this.moves = {}
     this.phase = 'setup'
@@ -50,8 +49,7 @@ class GameInterface {
 
   shownVariables() {
     const a = this.hiddenKeys.reduce((vars, key) => {
-      let {[key]: omit, ...rest} = vars
-      return rest
+      return {[key]:vars.slice(1)}
     }, this.variables)
     return a
   }

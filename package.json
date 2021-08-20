@@ -6,7 +6,8 @@
   "scripts": {
     "start": "nodemon run.js",
     "test": "NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
-    "build": "webpack"
+    "build": "webpack",
+    "lint": "eslint ."
   },
   "author": "",
   "license": "ISC",
