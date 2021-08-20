@@ -48,7 +48,6 @@ class GameRunner {
             external: true,
           },
         })
-        //let locks = []
         const serverBuffer = game.file("/server.js")
         vm.run(serverBuffer.toString())
 
@@ -90,10 +89,7 @@ class GameRunner {
           switch(message.type) {
             case 'startGame': return await startGame({playerId: message.playerId})
             case 'action': return await gameAction({playerId: message.playerId, ...message.payload})
-            // case 'refresh': return await refresh()
-            // case 'requestLock': return await requestLock({playerId: message.playerId, ...message.payload})
-            // case 'releaseLock': return await releaseLock({playerId: message.playerId, ...message.payload})
-            // case 'drag': return await drag({playerId: message.playerId, ...message.payload})
+            default: return console.log("unknown message", sessionId, message)
           }
         }
 

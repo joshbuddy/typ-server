@@ -14,6 +14,7 @@ const db = require('../models')
 
 
 const SECRET_KEY = "asdasdasd"
+const REDIS_URL = "redis://localhost:6379"
 
 async function responseMatching(ws, matcher, p) {
   return new Promise(resolve => {
@@ -35,7 +36,7 @@ describe("Server", () => {
   })
 
   beforeEach(done => {
-    const app = createServer({secretKey: SECRET_KEY, redisUrl: "redis://localhost:6379"})
+    const app = createServer({secretKey: SECRET_KEY, redisUrl: REDIS_URL})
     this.server = app.listen(3000, done)
   })
 
