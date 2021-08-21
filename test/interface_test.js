@@ -61,9 +61,15 @@ describe("GameInterface", () => {
   })
 
   describe("waitForAction", () => {
+    beforeEach(() => {
+      this.moves = {
+        hi: () => {},
+      }
+    })
+
     it('resolves on action', async () => {
       setTimeout(() => this.interface.emit('action', 1, 'hi', 'there', 'gamer'), 100)
-      const [action, ...args] = await this.interface.waitForAction('hi', 1)
+      const [action, ...args] = await this.interface.waitForAction([this.moves.hi], 1)
       assert.equal(action, 'hi')
       assert.deepEqual(args, ['there', 'gamer'])
       assert.equal(this.interface.listenerCount('action'), 0)
@@ -74,7 +80,7 @@ describe("GameInterface", () => {
         assert.equal(this.interface.listenerCount('action'), 1)
         done()
       }, 200)
-      this.interface.waitForAction('hi', 1).then(() => {
+      this.interface.waitForAction([this.moves.hi], 1).then(() => {
         assert(false, 'waitForAction completed early')
         done()
       })
@@ -83,7 +89,7 @@ describe("GameInterface", () => {
     it('waits with wrong action', done => {
       setTimeout(() => this.interface.emit('action', 1, 'wrong action'), 100)
       setTimeout(done, 200)
-      this.interface.waitForAction('hi', 1).then(() => {
+      this.interface.waitForAction([this.moves.hi], 1).then(() => {
         assert(false, 'waitForAction completed early')
         done()
       })
@@ -92,7 +98,7 @@ describe("GameInterface", () => {
     it('waits with wrong player', done => {
       setTimeout(() => this.interface.emit('action', 2, 'hi'), 100)
       setTimeout(done, 200)
-      this.interface.waitForAction('hi', 1).then(() => {
+      this.interface.waitForAction([this.moves.hi], 1).then(() => {
         assert(false, 'waitForAction completed early')
         done()
       })
@@ -101,7 +107,7 @@ describe("GameInterface", () => {
     it('resolves on action eventually', async () => {
       setTimeout(() => this.interface.emit('action', 1, 'wrong action'), 100)
       setTimeout(() => this.interface.emit('action', 1, 'hi'), 150)
-      await this.interface.waitForAction('hi', 1)
+      await this.interface.waitForAction([this.moves.hi], 1)
     })
   })
 })
