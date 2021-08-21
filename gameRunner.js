@@ -39,6 +39,7 @@ class GameRunner {
       let lock
       try {
         lock = await redlock.acquire([sessionLockKey], lockLeaseTime)
+        console.log("HAS LOCK")
         let lastLockTime = new Date().getTime()
         const session = await db.Session.findByPk(sessionId)
         const game = session.gameId === -1 ? this.localDevGame : await session.getGame()
@@ -98,8 +99,9 @@ class GameRunner {
         while (this.runningSessionIds.has(sessionId)) {
           let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           while (timeRemaining > 0) {
-            const event = await this.redisClient.blpop(this.sessionEventKey(sessionId), timeRemaining)
-            await processGameEvent(event)
+            const client = asyncRedis.decorate(await this.redisClient.duplicate())
+            const data = await client.blpop(this.sessionEventKey(sessionId), timeRemaining)
+            await processGameEvent(JSON.parse(data[1]))
             timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           }
           lock = await lock.extend(lockLeaseTime)

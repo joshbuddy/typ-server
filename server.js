@@ -221,7 +221,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
   }
 
   const wss = new WebSocket.Server({verifyClient, server})
-  const publisher = asyncRedis.createClient(redisUrl)
 
   wss.shouldHandle = (req) => {
     const path = url.parse(req.url).pathname
@@ -269,19 +268,19 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
           throw e
         }
       }
-      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
+      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
     }
 
     const releaseLock = async (key) => {
       await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
-      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
+      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
     }
 
     const drag = async ({key, x, y}) => {
       const lock = locks.find(lock => lock.key == key)
       console.log('drag', lock, sessionUser.userId)
       if (!lock || lock.user != sessionUser.userId) return
-      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
     }
 
     gameRunner.startSession(session.id).catch(error => {
@@ -291,13 +290,22 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const sessionEventKey = gameRunner.sessionEventKey(req.sessionId)
     ws.on('message', async (data) => {
-      const message = JSON.parse(data)
-
-      switch(message.type) {
-        case 'requestLock': return await requestLock(message.key)
-        case 'releaseLock': return await releaseLock(message.key)
-        case 'drag': return await drag(message)
-        default: return await redisClient.rpush(sessionEventKey, JSON.stringify({playerId: req.userId, ...message}))
+      try {
+        const message = JSON.parse(data)
+        switch(message.type) {
+          case 'requestLock': return await requestLock(message.key)
+          case 'releaseLock': return await releaseLock(message.key)
+          case 'drag': return await drag(message)
+          default:
+            const redisClient = asyncRedis.createClient(redisUrl)
+            const event = JSON.stringify({playerId: req.userId, ...message})
+            const out = await redisClient.rpush(sessionEventKey, event)
+            return out
+        }
+      } catch(e) {
+        console.error("error", data, e)
+      } finally {
+        console.log("DONE", data)
       }
     })
 
