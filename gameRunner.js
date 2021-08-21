@@ -1,5 +1,6 @@
 const _ = require('lodash')
 const redis = require("redis")
+const asyncRedis = require("async-redis");
 const Redlock = require("redlock");
 const { NodeVM } = require('vm2')
 const GameInterface = require('./game/interface')
@@ -10,7 +11,7 @@ class GameRunner {
     this.redisUrl = redisUrl
     this.localDevGame = localDevGame
     this.runningSessionIds = new Set()
-    this.redisClient = redis.createClient(redisUrl)
+    this.redisClient = asyncRedis.createClient(redisUrl)
   }
 
   sessionEventKey(sessionId) {
@@ -23,10 +24,11 @@ class GameRunner {
 
     const lockLeaseTime = 10000
     const sessionLockKey = `session-lock-${sessionId}`
+    const redlockClient = redis.createClient(this.redisUrl)
     const redlock = new Redlock(
       // You should have one client for each independent redis node
       // or cluster.
-      [this.redisUrl],
+      [redlockClient],
       {
         driftFactor: 0.01,
         retryCount: 0, // don't retry
@@ -96,7 +98,7 @@ class GameRunner {
         while (this.runningSessionIds.has(sessionId)) {
           let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           while (timeRemaining > 0) {
-            const event = await redis.blpop(this.sessionEventKey(sessionId), timeRemaining)
+            const event = await this.redisClient.blpop(this.sessionEventKey(sessionId), timeRemaining)
             await processGameEvent(event)
             timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
           }
@@ -106,13 +108,13 @@ class GameRunner {
       } catch (e) {
         console.error("ERROR IN GAME RUNNER LOOP", e)
       } finally {
-        await lock.release()
+        if (lock) await lock.release()
       }
     }
   }
 
   async stopSession(sessionId) {
-    this.runningSessionIds.remove(sessionId)
+    this.runningSessionIds.delete(sessionId)
   }
 }
 

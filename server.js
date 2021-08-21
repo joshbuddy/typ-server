@@ -2,7 +2,8 @@ const url = require('url')
 const WebSocket = require("ws")
 const express = require("express")
 const http = require("http")
-const redis = require("redis")
+const redis = require("redis");
+const asyncRedis = require("async-redis");
 const bodyParser = require('body-parser')
 const jwt = require("jsonwebtoken")
 const { Sequelize } = require('sequelize')
@@ -16,7 +17,7 @@ const path = require('path')
 module.exports = ({secretKey, redisUrl, ...devGame }) => {
   const app = express()
   const server = http.createServer(app)
-  const redisClient = redis.createClient(redisUrl)
+  const redisClient = asyncRedis.createClient(redisUrl)
 
   let localDevGame, webpackCompiler
 
@@ -220,7 +221,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
   }
 
   const wss = new WebSocket.Server({verifyClient, server})
-  const publisher = redis.createClient(redisUrl)
+  const publisher = asyncRedis.createClient(redisUrl)
 
   wss.shouldHandle = (req) => {
     const path = url.parse(req.url).pathname
@@ -244,6 +245,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const sendPlayerView = async () => {
       const data = await redisClient.get(`session-player-state-${req.sessionId}-${req.userId}`)
+      console.log("HIHI", data)
       if (data !== lastPlayerView) {
         ws.send(data)
         lastPlayerView = data
@@ -276,11 +278,11 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
     }
 
-    const drag = ({key, x, y}) => {
+    const drag = async ({key, x, y}) => {
       const lock = locks.find(lock => lock.key == key)
       console.log('drag', lock, sessionUser.userId)
       if (!lock || lock.user != sessionUser.userId) return
-      publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+      await publisher.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
     }
 
     gameRunner.startSession(session.id).catch(error => {
