@@ -75,18 +75,21 @@ class GameInterface {
     return true
   }
 
-  getPlayerView() {
-    const playerView = this.doc.clone()
-    playerView.findNodes(this.hidden()).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
-
-    return {
-      variables: this.shownVariables(),
-      phase: this.phase,
-      players: this.players,
-      currentPlayer: this.currentPlayer,
-      board: playerView.boardNode().outerHTML,
-      pile: this.doc.pileNode().outerHTML,
+  getPlayerViews() {
+    const playerViews = {}
+    for (let pid in this.players) {
+      const playerView = this.doc.clone()
+      playerView.findNodes(this.hidden()).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
+      playerViews[pid] = {
+        variables: this.shownVariables(),
+        phase: this.phase,
+        players: this.players,
+        currentPlayer: this.currentPlayer,
+        board: playerView.boardNode().outerHTML,
+        pile: this.doc.pileNode().outerHTML,
+      }
     }
+    return playerViews
   }
 
   hidden() {

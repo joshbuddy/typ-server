@@ -245,7 +245,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const sendPlayerView = async () => {
       const data = await redisClient.get(`session-player-state-${req.sessionId}-${req.userId}`)
-      console.log("HIHI", data)
       if (data !== lastPlayerView) {
         ws.send(data)
         lastPlayerView = data
