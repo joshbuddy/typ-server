@@ -51,6 +51,16 @@ class GameRunner {
             external: true,
           },
         })
+
+        // wheres the socket now?
+        /* gameInstance.on('update', allowedActions => {
+         *   ws.send(JSON.stringify({
+         *     type: 'update',
+         *     state: gameInstance.getPlayerView(),
+         *     allowedActions,
+         *   }))
+         * }) */
+
         const serverBuffer = game.file("/server.js")
         vm.run(serverBuffer.toString())
 

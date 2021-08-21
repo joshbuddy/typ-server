@@ -1,17 +1,107 @@
 secure session/player var tampering
 
+- how to manage game state machine? old nextAction is awkward
+phases = {
+  setup: async () => {
+    do stuff
+    await eachPlayer(move)
+    goTo('nextPhase')
+
 - start qa list
   - send choices to client
   - display choices
+
+- contextual actions?
+  - deck.card can draw, look at, reveal
+  - reveal.card can discard, put on top of deck
 
 - auto-reconnect
 - connection status
 - show errors from server
 - fix players full
 
-
-
-/////
-
 every server tries to acquire a lock
 the one that wins creates a game instance and starts consuming events from redis
+
+single giant procedure, can freeze history and rseed and replay state if lost connection
+
+play: {
+  do {
+    // deal
+
+    do {
+      await anyPlayerPlay(passCard)
+    } while (find('passed card').count < 12)
+
+    // pass cards
+
+    setCurrentPlayer(find('#2C').owner())
+    await repeat(13, async {
+      this.delete('led')
+      await playersInTurn(turn => async {
+        await card = currentPlayerPlay(playCard)
+        if (turn === 0) this.set('led', card.suit)
+      })
+      // score trick      
+    })
+    // score hand
+  } while (max(score) < 100)
+}
+
+playCard: card => {
+  // 2C or led suit cards or not:H or whatever
+  return this.choice(card, plays, () => {
+    card.move('played.mine');
+    return this.endTurn();
+  });
+},
+
+passTurn: this.choice('pass') ?? simple version for binary choice
+
+.setCurrentPlayer
+.currentPlayerPlay
+.anyPlayerPlay
+.playersInTurn
+.replay(history)
+
+playersMayAlways
+implement play() in tic-tac-toe and numberGuesser
+history-write
+reload=from-history
+rseed
+
+movex [el1, el2, el3]
+movey [el1, el2] [space1, space2]
+movez boolean
+
+el1 -> ctx-menu [movex, movey] -> [space1, space2]
+el3 click
+'movez' button
+
+confirmation step required per move?
+
+el1: movex, movey -> movex(el1)
+el2: movex, movey
+el3: movex
+'movez': movez -> movez()
+
+does the main play method need a thread lock?
+
+
+
+- OR -
+
+
+state -> action(until condition/times)x(players) -> state
+
+element.owner() // up thru parents till player
+lastAction()
+history()
+
+setup,deal -> passCards
+
+passCards: each player passes -> play
+
+play:
+ on enter: set current player
+ 

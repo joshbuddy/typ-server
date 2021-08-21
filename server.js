@@ -238,6 +238,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     if (!sessionUser) {
       return ws.close(4001)
     }
+
     const session = await sessionUser.getSession()
     const locks = []
     let lastPlayerView = null
@@ -255,6 +256,25 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
     }
 
+    /* const receiveAction = async ([action, ...args]) => {
+     *   console.log(`S ${req.userId}: receiveAction(${action}, ${args})`)
+     *   await session.update({lastState: [req.userId, action, ...args]})
+     *   await publisher.publish(channelName, JSON.stringify({type: 'action'}))
+     * }
+
+     * const executeAction = async () => {
+     *   await session.reload()
+     *   console.log('session', session.lastState)
+     *   const [userId, action, ...args] = session.lastState
+     *   console.log(`S ${req.userId}: executeAction(${userId}, ${action}, ${args})`)
+
+     *   try {
+     *     gameInstance.receiveAction(userId, action, ...args)
+     *   } catch(e) {
+     *     ws.send(JSON.stringify(e.message))
+     *   }
+     * } */
+    
     const requestLock = async (key) => {
       try {
         await db.ElementLock.destroy({where: {
@@ -278,7 +298,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const drag = async ({key, x, y}) => {
       const lock = locks.find(lock => lock.key == key)
-      console.log('drag', lock, sessionUser.userId)
       if (!lock || lock.user != sessionUser.userId) return
       await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
     }
@@ -314,8 +333,10 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     subscriber.on("message", async (channel, data) => {
       const message = JSON.parse(data)
       switch (message.type) {
-        case 'state': return await sendPlayerView()
+        //case 'state': return await sendPlayerView()
         case 'locks': return await sendPlayerLocks()
+        case 'action': return await executeAction()
+        //case 'drag': return await updateElement(message)
         default: return ws.send(data)
       }
     })
