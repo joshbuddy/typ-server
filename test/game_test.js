@@ -56,12 +56,14 @@ describe("Playing a game", () => {
     const guesser = (socket, playerIndex) => {
       return (data) => {
         const message = JSON.parse(data)
-        if (message.type !== 'update') return
-        if (message.data.phase === 'finished') return socket.close()
-        if (message.data.phase !== 'playing') return
-        if (message.data.currentPlayer !== playerIndex) return
-        const guess = Math.floor(Math.random() * 10) + 1
-        socket.send(JSON.stringify({type: "action", "payload": ["guess", guess]}))
+        console.log('guesser listening', playerIndex, message)
+        if (message.type === 'state' && message.state.phase === 'finished') return socket.close()
+        if (message.type === 'state' && message.state.allowedActions.guess) {
+          setImmediate(() => {
+            const guess = Math.floor(Math.random() * 10) + 1
+            socket.send(JSON.stringify({type: "action", "payload": ["guess", guess]}))
+          })
+        }
       }
     }
 
@@ -72,6 +74,7 @@ describe("Playing a game", () => {
       p2.on('open', () => {
         setTimeout(() => {
           p1.send(JSON.stringify({type: "startGame"}))
+          p2.send(JSON.stringify({type: "startGame"}))
         }, 100)
 
       })

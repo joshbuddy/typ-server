@@ -16,9 +16,12 @@ module.exports = (sequelize, DataTypes) => {
       },
     }
   });
-  Game.associate = function(models) {
-    // associations can be defined here
-  };
+
+  // uncomment to make associations here
+  //
+  // Game.associate = function(models) {
+  // }
+
   Game.prototype.file = function(f) {
     if (this.getDataValue('localDir')) {
       return fs.readFileSync(path.join(this.getDataValue('localDir'), f))
