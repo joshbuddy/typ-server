@@ -36,11 +36,7 @@ describe("GameInterface", () => {
   describe("replay", () => {
     it("plays", done => {
       this.interface.play().then(() => {
-        expect(this.updateSpy).to.have.been.called.exactly(10)
-        expect(this.updateSpy).on.nth(1).be.called.with({addSome: 'addSome'})
-        expect(this.updateSpy).on.nth(2).be.called.with({addSome: 'addSome'})
-        expect(this.updateSpy).on.nth(3).be.called.with({takeOne: 'takeOne'})
-        expect(this.updateSpy).on.nth(4).be.called.with({})
+        expect(this.updateSpy).to.have.been.called.exactly(40)
         done()
       })
       this.interface.replay([

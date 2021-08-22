@@ -243,11 +243,10 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     const locks = []
     let lastPlayerView = null
 
-    const sendPlayerView = async () => {
-      const data = await redisClient.get(`session-player-state-${req.sessionId}-${req.userId}`)
-      if (data !== lastPlayerView) {
-        ws.send(data)
-        lastPlayerView = data
+    const sendPlayerView = async jsonData => {
+      if (jsonData !== lastPlayerView) {
+        ws.send(jsonData)
+        lastPlayerView = jsonData
       }
     }
 
@@ -255,25 +254,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       const locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
       ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
     }
-
-    /* const receiveAction = async ([action, ...args]) => {
-     *   console.log(`S ${req.userId}: receiveAction(${action}, ${args})`)
-     *   await session.update({lastState: [req.userId, action, ...args]})
-     *   await publisher.publish(channelName, JSON.stringify({type: 'action'}))
-     * }
-
-     * const executeAction = async () => {
-     *   await session.reload()
-     *   console.log('session', session.lastState)
-     *   const [userId, action, ...args] = session.lastState
-     *   console.log(`S ${req.userId}: executeAction(${userId}, ${action}, ${args})`)
-
-     *   try {
-     *     gameInstance.receiveAction(userId, action, ...args)
-     *   } catch(e) {
-     *     ws.send(JSON.stringify(e.message))
-     *   }
-     * } */
     
     const requestLock = async (key) => {
       try {
@@ -302,7 +282,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
     }
 
-    gameRunner.startSession(session.id).catch(error => {
+    gameRunner.startSession(session.id, req.userId).catch(error => {
       console.error("error starting session!", error)
       return ws.close(1011) // internal error
     })
@@ -317,7 +297,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
           case 'drag': return await drag(message)
           default:
             const redisClient = asyncRedis.createClient(redisUrl)
-            const event = JSON.stringify({playerId: req.userId, ...message})
+            const event = JSON.stringify({userId: req.userId, ...message})
             const out = await redisClient.rpush(sessionEventKey, event)
             return out
         }
@@ -332,10 +312,13 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     subscriber.subscribe(gameRunner.sessionEventKey(session.id))
     subscriber.on("message", async (channel, data) => {
       const message = JSON.parse(data)
+      if (message.userId && message.userId != req.userId) {
+        return
+      }
       switch (message.type) {
-        //case 'state': return await sendPlayerView()
+        case 'state': return await sendPlayerView(data)
         case 'locks': return await sendPlayerLocks()
-        case 'action': return await executeAction()
+        //case 'action': return await executeAction()
         //case 'drag': return await updateElement(message)
         default: return ws.send(data)
       }
@@ -353,8 +336,6 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       gameRunner.stopSession(session.id)
       throw error
     })
-
-    await sendPlayerView()
   }
   wss.on("connection", onWssConnection)
 

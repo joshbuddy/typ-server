@@ -20,20 +20,30 @@ class GameInterface extends EventEmitter {
     this.setup && this.setup()
     this.currentPlayer = 0
     this.phase = 'playing'
-    console.log(`I ${this.playerId}: start()`)
+    console.log(`I: start()`)
     await this.play()
-    this.emit('update')
+    this.update() // final game state
   }
 
-  addPlayer(playerId) {
-    if (this.players.includes(playerId)) return
+  addPlayer(userId) {
+    if (this.players.includes(userId)) return
     if (this.players.length == this.maxPlayers) throw Error("game already full")
-    this.players.push(playerId)
-    this.player = this.players.indexOf(this.playerId)
+    this.players.push(userId)
+    this.player = this.players.indexOf(this.userId)
   }
 
   getPlayers() {
     return this.players
+  }
+
+  update(allowedActions, forPlayer) {
+    console.log('I: allowedActions', forPlayer)
+    this.players.forEach(player => {
+      this.emit('update', player, this.getPlayerView(
+        player,
+        forPlayer >= 0 && this.players[forPlayer] !== player ? {} : allowedActions
+      ))
+    })
   }
 
   get(key) {
@@ -54,7 +64,8 @@ class GameInterface extends EventEmitter {
 
   shownVariables() {
     const a = this.hiddenKeys.reduce((vars, key) => {
-      return {[key]:vars.slice(1)}
+      let {[key]: omit, ...rest} = vars
+      return rest
     }, this.variables)
     return a
   }
@@ -80,40 +91,39 @@ class GameInterface extends EventEmitter {
     return true
   }
 
-  getPlayerViews() {
-    const playerViews = {}
-    for (let pid in this.players) {
-      const playerView = this.doc.clone()
-      playerView.findNodes(this.hidden()).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
-      playerViews[pid] = {
-        variables: this.shownVariables(),
-        phase: this.phase,
-        players: this.players,
-        currentPlayer: this.currentPlayer,
-        board: playerView.boardNode().outerHTML,
-        pile: this.doc.pileNode().outerHTML,
-      }
+  getPlayerView(player, allowedActions) {
+    const playerView = this.doc.clone()
+    playerView.findNodes(this.hidden(player)).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
+    return {
+      variables: this.shownVariables(),
+      phase: this.phase,
+      players: this.players,
+      currentPlayer: this.currentPlayer,
+      board: playerView.boardNode().outerHTML,
+      pile: this.doc.pileNode().outerHTML,
+      allowedActions,
     }
-    return playerViews
   }
 
-  hidden() {
+  hidden(player) { // eslint-disable-line no-unused-vars
     return null
   }
 
   async currentPlayerPlay(moves) {
-    moves = moves.includes ? moves : [moves]
-    this.emit('update', this.player == this.currentPlayer ? this.optionsFromMoves(moves) : {})
-    return await this.waitForAction(moves, this.currentPlayer)
+    return await this.playerPlay(moves, this.currentPlayer)
   }
 
   async anyPlayerPlay(moves) {
-    moves = moves.includes ? moves : [moves]
-    this.emit('update', this.optionsFromMoves(moves))
-    return await this.waitForAction(moves)
+    return await this.playerPlay(moves)
   }
 
-  async repeat(times, fn) {
+  async playerPlay(moves, player) {
+    moves = moves.includes ? moves : [moves]
+    this.update(this.optionsFromMoves(moves), player)
+    return await this.waitForAction(moves, player)
+  }
+
+    async repeat(times, fn) {
     for (let i=0; i<times; i++) {
       await fn(i)
     }
@@ -154,37 +164,37 @@ class GameInterface extends EventEmitter {
     }))
   }
 
-  receiveAction(playerId, action, ...args) {
+  receiveAction(userId, action, ...args) {
     if (this.phase !== 'playing') throw Error("game not active")
-    console.log(`I ${this.playerId}: receiveAction(${playerId}, ${action}, ${args})`)
+    console.log(`I: receiveAction(${userId}, ${action}, ${args})`)
     if (this.listenerCount('action') === 0) {
-      console.error(`${this.playerId}: no listener`)
+      console.error(`${this.userId}: no listener`)
       throw Error("No listener")
     }
-    this.emit('action', this.players.indexOf(playerId), action, ...args)
+    this.emit('action', this.players.indexOf(userId), action, ...args)
     // if (this.currentPlayer !== this.player) throw Error("it's not your turn")
   }
 
   // returns a promise that resolves when receiving an action from fromPlayer (default any) in the actions list
   // runs the action upon resolving
   async waitForAction(actions, fromPlayer) {
-    console.log(`I ${this.playerId}: waitForAction(${actions.map(a=>a.name)}, ${fromPlayer})`)
+    console.log(`I: waitForAction(${actions.map(a=>a.name)}, ${fromPlayer})`)
     return new Promise((resolve, reject) => {
       if (this.listenerCount('action') > 1) {
         console.error("Game play has gotten ahead of itself. You are probably missing an `await` in the play function")
         return reject("Game play has gotten ahead of itself. You are probably missing an `await` in the play function")
       }
       this.on('action', (player, action, ...args) => {
-        console.log(`I ${this.playerId}: got action {${player}, ${action}, ${args}}`)
+        console.log(`I: got action (${player}, ${action}, ${args})`)
         const allowedAction = actions.find(a => a.name == action)
         if ((fromPlayer === undefined || player === fromPlayer) && allowedAction) {
-          console.log(`I ${this.playerId}: resolve(${action}, ${args})`)
+          console.log(`I: resolve(${action}, ${args})`)
           allowedAction(...args)
           this.removeAllListeners('action')
           resolve([action, ...args])
         }
       })
-      console.log(`I ${this.playerId}: waiting...`)
+      console.log(`I: waiting...`)
     })
   }
 

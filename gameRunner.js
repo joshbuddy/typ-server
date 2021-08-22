@@ -1,4 +1,3 @@
-const _ = require('lodash')
 const redis = require("redis")
 const asyncRedis = require("async-redis");
 const Redlock = require("redlock");
@@ -18,7 +17,7 @@ class GameRunner {
     return `session-events-${sessionId}`
   }
 
-  async startSession(sessionId) {
+  async startSession(sessionId, userId) {
     if (this.runningSessionIds.has(sessionId)) return
     this.runningSessionIds.add(sessionId)
 
@@ -43,7 +42,7 @@ class GameRunner {
         let lastLockTime = new Date().getTime()
         const session = await db.Session.findByPk(sessionId)
         const game = session.gameId === -1 ? this.localDevGame : await session.getGame()
-        const gameInstance = new GameInterface(session.lastState)
+        const gameInstance = new GameInterface()
         const vm = new NodeVM({
           console: 'inherit',
           sandbox: {game: gameInstance},
@@ -52,56 +51,39 @@ class GameRunner {
           },
         })
 
-        // wheres the socket now?
-        /* gameInstance.on('update', allowedActions => {
-         *   ws.send(JSON.stringify({
-         *     type: 'update',
-         *     state: gameInstance.getPlayerView(),
-         *     allowedActions,
-         *   }))
-         * }) */
+        gameInstance.on('update', async (userId, state) => {
+          await this.redisClient.publish(this.sessionEventKey(sessionId), JSON.stringify({
+            type: 'state',
+            userId: userId,
+            state
+          }))
+        })
 
         const serverBuffer = game.file("/server.js")
         vm.run(serverBuffer.toString())
 
-        const pumpGameState = async () => {
-          const playerViews = gameInstance.getPlayerViews()
-          _.each(playerViews, async (value, key) => {
-            await this.redisClient.set(`session-player-state-${sessionId}-${key}`, value, 'ex', 86400)
+        const startGame = userId => {
+          gameInstance.addPlayer(userId)
+          gameInstance.start().then({
+            // TODO handle this promise resolution (end of game)
+          }).catch(e => {
+            console.error('ERROR DURING PLAY', e)
+            // TODO not enough players but this should be an explicit start command
           })
-          await this.redisClient.publish(`session-state-channel-${sessionId}`, '')
         }
 
-        const startGame = async () => {
-          await db.sequelize.transaction(async transaction => {
-            if (session.lastState && session.lastState.phase !== 'setup') {
-              throw new Error("Cannot start game unless setup phase")
-            }
-            gameInstance.start()
-            await session.update({lastState: gameInstance.getState()}, {transaction})
-          })
-          await pumpGameState()
-        }
-
-        const gameAction = async ([action, ...args]) => {
+        const gameAction = (userId, action, ...args) => {
           console.log('gameAction', action, args)
 
-          const persist = gameInstance.receiveAction(action, args)
-          if (persist) {
-            await db.sequelize.transaction(async transaction => {
-              if (!session.lastState) {
-                throw new Error("No lastState")
-              }
-              await session.update({lastState: gameInstance.getState()}, {transaction})
-            })
-          }
-          await pumpGameState()
+          const persist = gameInstance.receiveAction(userId, action, ...args)
+          // TODO error handling?
+          // TODO record history
         }
 
         const processGameEvent = async (message) => {
           switch(message.type) {
-            case 'startGame': return await startGame({playerId: message.playerId})
-            case 'action': return await gameAction({playerId: message.playerId, ...message.payload})
+            case 'startGame': return await startGame(message.userId)
+            case 'action': return await gameAction(message.userId, ...message.payload)
             default: return console.log("unknown message", sessionId, message)
           }
         }

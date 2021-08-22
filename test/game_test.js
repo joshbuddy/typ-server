@@ -56,9 +56,9 @@ describe("Playing a game", () => {
     const guesser = (socket, playerIndex) => {
       return (data) => {
         const message = JSON.parse(data)
-        console.log('guesser listening', playerIndex, message.state && message.state.phase)
-        if (message.type === 'update' && message.state.phase === 'finished') return socket.close()
-        if (message.type === 'update' && message.allowedActions.guess) {
+        console.log('guesser listening', playerIndex, message)
+        if (message.type === 'state' && message.state.phase === 'finished') return socket.close()
+        if (message.type === 'state' && message.state.allowedActions.guess) {
           setImmediate(() => {
             const guess = Math.floor(Math.random() * 10) + 1
             socket.send(JSON.stringify({type: "action", "payload": ["guess", guess]}))
