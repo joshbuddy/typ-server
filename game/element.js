@@ -43,6 +43,10 @@ class GameElement {
     return this.node.parentNode && this.wrap(this.node.parentNode);
   }
 
+  matches(q) {
+    return this.node.matches(q);
+  }
+
   branch() {
     const branch = [];
     let node = this.node;

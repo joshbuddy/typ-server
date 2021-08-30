@@ -252,8 +252,10 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const sendPlayerLocks = async () => {
       const locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
-      ws.send(JSON.stringify({type: 'updateLocks', data: locks}))
+      ws.send(JSON.stringify({type: 'updateLocks', payload: locks}))
     }
+
+    const publish = async message => redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify(message))
     
     const requestLock = async (key) => {
       try {
@@ -268,21 +270,21 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
           throw e
         }
       }
-      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
+      await publish({type: 'locks'})
     }
 
     const releaseLock = async (key) => {
       await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
-      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'locks'}))
+      await publish({type: 'locks'})
     }
 
     const drag = async ({key, x, y}) => {
       const lock = locks.find(lock => lock.key == key)
       if (!lock || lock.user != sessionUser.userId) return
-      await redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify({type: 'drag', user: lock.user, key, x, y}))
+      await publish({type: 'drag', user: lock.user, key, x, y})
     }
 
-    gameRunner.startSession(session.id, req.userId).catch(error => {
+    gameRunner.startSession(session.id).catch(error => {
       console.error("error starting session!", error)
       return ws.close(1011) // internal error
     })
@@ -291,20 +293,19 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data)
+        console.log(`S ${req.userId}: ws message`, message)
         switch(message.type) {
-          case 'requestLock': return await requestLock(message.key)
-          case 'releaseLock': return await releaseLock(message.key)
-          case 'drag': return await drag(message)
-          default:
-            const redisClient = asyncRedis.createClient(redisUrl)
-            const event = JSON.stringify({userId: req.userId, ...message})
-            const out = await redisClient.rpush(sessionEventKey, event)
+          case 'requestLock': return await requestLock(message.payload.key)
+          case 'releaseLock': return await releaseLock(message.payload.key)
+          case 'drag': return await drag(message.payload)
+          default: {
+            message.payload.userId = req.userId
+            const out = await redisClient.rpush(sessionEventKey, JSON.stringify(message))
             return out
+          }
         }
       } catch(e) {
         console.error("error", data, e)
-      } finally {
-        console.log("DONE", data)
       }
     })
 
@@ -312,14 +313,16 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     subscriber.subscribe(gameRunner.sessionEventKey(session.id))
     subscriber.on("message", async (channel, data) => {
       const message = JSON.parse(data)
+      console.log(`S ${req.userId}: redis message`, message.type, message.userId)
+      // TODO better as seperate channels for each user and all users?
       if (message.userId && message.userId != req.userId) {
         return
       }
       switch (message.type) {
         case 'state': return await sendPlayerView(data)
         case 'locks': return await sendPlayerLocks()
-        //case 'action': return await executeAction()
-        //case 'drag': return await updateElement(message)
+          //case 'action': return await executeAction()
+          //case 'drag': return await updateElement(message)
         default: return ws.send(data)
       }
     })

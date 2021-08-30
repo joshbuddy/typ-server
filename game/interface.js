@@ -5,24 +5,28 @@ class GameInterface extends EventEmitter {
   constructor() {
     super()
     this.players = []
-    this.moves = {}
     this.phase = 'setup'
     this.hiddenKeys = []
     this.variables = {}
     this.doc = new GameDocument(null, this)
     this.board = this.doc.board()
-    this.pile = this.doc.pile()
+    this.pile = this.doc.pile() 
   }
 
-  async start() {
+  async start(history) {
     if (this.players.length < this.minPlayers) throw Error("not enough players")
+    if (this.phase !== 'setup') throw Error("not ready to start")
     this.variables = this.initialVariables || {}
     this.setup && this.setup()
     this.currentPlayer = 0
     this.phase = 'playing'
-    console.log(`I: start()`)
+    this.sequence = 0
+    console.log(`I: start()`, history)
+    this.lastReplaySequence = history.length ? history[history.length - 1][1] : -1
+    this.updatePlayer() // initial game state with no actions allowed
+    this.replay(history)
     await this.play()
-    this.update() // final game state
+    this.updatePlayer() // final game state with no actions allowed
   }
 
   addPlayer(userId) {
@@ -36,13 +40,18 @@ class GameInterface extends EventEmitter {
     return this.players
   }
 
-  update(allowedActions, forPlayer) {
-    console.log('I: allowedActions', forPlayer)
+  updatePlayer(allowedActions, forPlayer) {
+    if (this.sequence <= this.lastReplaySequence) return
+    console.log('I: allowedActions', forPlayer, this.players)
     this.players.forEach(player => {
-      this.emit('update', player, this.getPlayerView(
-        player,
-        forPlayer >= 0 && this.players[forPlayer] !== player ? {} : allowedActions
-      ))
+      this.emit('update', {
+        type: 'state',
+        userId: player,
+        payload: this.getPlayerView(
+          player,
+          forPlayer >= 0 && this.players[forPlayer] !== player ? {} : allowedActions
+        )
+      })
     })
   }
 
@@ -99,6 +108,7 @@ class GameInterface extends EventEmitter {
       phase: this.phase,
       players: this.players,
       currentPlayer: this.currentPlayer,
+      sequence: this.sequence,
       board: playerView.boardNode().outerHTML,
       pile: this.doc.pileNode().outerHTML,
       allowedActions,
@@ -109,21 +119,20 @@ class GameInterface extends EventEmitter {
     return null
   }
 
-  async currentPlayerPlay(moves) {
-    return await this.playerPlay(moves, this.currentPlayer)
+  async currentPlayerPlay(actions) {
+    return await this.playerPlay(actions, this.currentPlayer)
   }
 
-  async anyPlayerPlay(moves) {
-    return await this.playerPlay(moves)
+  async anyPlayerPlay(actions) {
+    return await this.playerPlay(actions)
   }
 
-  async playerPlay(moves, player) {
-    moves = moves.includes ? moves : [moves]
-    this.update(this.optionsFromMoves(moves), player)
-    return await this.waitForAction(moves, player)
+  async playerPlay(actions, player) {
+    actions = actions.includes ? actions : [actions]
+    return await this.waitForAction(actions, player)
   }
 
-    async repeat(times, fn) {
+  async repeat(times, fn) {
     for (let i=0; i<times; i++) {
       await fn(i)
     }
@@ -137,61 +146,116 @@ class GameInterface extends EventEmitter {
     })
   }
 
-  // given a set of moves, return a mapping of board choices to each move
-  optionsFromMoves(moves) {
-    return moves.reduce((options, move) => {
-      const result = this.testMove(move, [])
+  playersMayAlwaysMove(selector) {
+    this.allowedMoveElements = selector
+    this.emit('update', {
+      type: 'allowedMove',
+      payload: selector
+    })
+  }
+
+  playersMayNoLonger(moves) {
+    moves = moves.includes ? moves : [moves]
+    this.freeMoves = this.freeMoves.filter(move => !moves.includes(move))
+  }
+
+  optionsFromActions(actions) {
+    return actions.reduce((options, action) => {
+      const result = this.testAction(action, [])
       if (result === false) return
       if (result === true) {
-        options[move.name] = move.name
+        options[action.name] = action.name
       } else {
-        result.forEach(option => options[option] = move.name)
+        options[action.name] = result
       }
       return options
     }, {})
   }
 
-  testMove(move, args) {
+  // given a set of actions, return a mapping of board choices to each action
+  /* optionsFromActions(actions) {
+   *   return actions.reduce((options, action) => {
+   *     const result = this.testAction(action, [])
+   *     if (result === false) return
+   *     if (result === true) {
+   *       options[action.name] = action.name
+   *     } else {
+   *       result.forEach(option => options[option] = action.name)
+   *     }
+   *     return options
+   *   }, {})
+   * } */
+
+  testAction(action, args) {
     const state = this.getState()
-    const result = move(...args)
+    const result = action(...args)
     this.setState(state)
     return result
   }
 
-  replay(moves) {
-    moves.forEach(move => setImmediate(() => {
-      this.emit('action', ...move)
+  replay(actions) {
+    actions.forEach(action => setImmediate(() => {
+      this.emit('action', false, ...action)
     }))
   }
 
-  receiveAction(userId, action, ...args) {
+  receiveAction(userId, sequence, action, ...args) {
     if (this.phase !== 'playing') throw Error("game not active")
-    console.log(`I: receiveAction(${userId}, ${action}, ${args})`)
+    console.log(`I: receiveAction(${userId}, ${sequence}, ${action}, ${args})`)
     if (this.listenerCount('action') === 0) {
       console.error(`${this.userId}: no listener`)
       throw Error("No listener")
     }
-    this.emit('action', this.players.indexOf(userId), action, ...args)
-    // if (this.currentPlayer !== this.player) throw Error("it's not your turn")
+    this.emit('action', true, this.players.indexOf(userId), sequence, action, ...args)
   }
 
-  // returns a promise that resolves when receiving an action from fromPlayer (default any) in the actions list
-  // runs the action upon resolving
+  // returns a promise that resolves when receiving a valid action from fromPlayer (default any) in the actions list
+  // runs the action upon resolving. if action is partial, it sends a follow-up question
   async waitForAction(actions, fromPlayer) {
     console.log(`I: waitForAction(${actions.map(a=>a.name)}, ${fromPlayer})`)
+    this.updatePlayer(this.optionsFromActions(actions), fromPlayer)
     return new Promise((resolve, reject) => {
       if (this.listenerCount('action') > 1) {
         console.error("Game play has gotten ahead of itself. You are probably missing an `await` in the play function")
         return reject("Game play has gotten ahead of itself. You are probably missing an `await` in the play function")
       }
-      this.on('action', (player, action, ...args) => {
+      this.on('action', (realtime, player, sequence, action, ...args) => {
         console.log(`I: got action (${player}, ${action}, ${args})`)
-        const allowedAction = actions.find(a => a.name == action)
-        if ((fromPlayer === undefined || player === fromPlayer) && allowedAction) {
-          console.log(`I: resolve(${action}, ${args})`)
-          allowedAction(...args)
-          this.removeAllListeners('action')
-          resolve([action, ...args])
+        if (action == 'moveElement') {
+          try {
+            if (realtime) this.registerAction(player, sequence, ['moveElement', ...args])
+            this.sequence++;
+            this.moveElement(...args)
+            this.updatePlayer(this.optionsFromActions(actions), fromPlayer)
+          } catch(e) {
+            console.error("unable to register action", e)
+            // UNDO?
+          }
+        } else {
+          const allowedAction = actions.find(a => a.name == action)
+          console.log('I try resolve with', allowedAction, `${fromPlayer}==${player}, ${sequence}==${this.sequence}`)
+          if ((fromPlayer === undefined || player === fromPlayer) && allowedAction && this.sequence === sequence) {
+            const result = allowedAction(...args)
+            console.log('I result', result)
+            if (result === true) {
+              try {
+                console.log(`I: registerAction(${player}, ${sequence}, ${action}, ${args})`)
+                if (realtime) this.registerAction(player, sequence, [action, ...args])
+                this.sequence++;
+                this.removeAllListeners('action')
+                resolve([action, ...args])
+              } catch(e) {
+                console.error("unable to register action", e)
+                // UNDO?
+              }
+            }
+            if (result === false) {
+              // illegal action
+            }
+            if (result.includes) {
+              this.updatePlayer({[action]: [...args, result]})
+            }
+          }
         }
       })
       console.log(`I: waiting...`)
@@ -207,6 +271,16 @@ class GameInterface extends EventEmitter {
 
   endTurn() {
     this.currentPlayer = (this.currentPlayer + 1) % this.players.length
+  }
+
+  moveElement(key, x, y) {
+    const el = this.board.pieceAt(key)
+    if (el.matches(this.allowedMoveElements)) {
+      el.set('x', x)
+      el.set('y', y)
+    } else {
+      console.error("Illegal moveElement", el.node.outerHTML, el.doc.innerHTML, this.allowedMoveElements)
+    }
   }
 }
 

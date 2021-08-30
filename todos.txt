@@ -64,19 +64,32 @@ passTurn: this.choice('pass') ?? simple version for binary choice
 .playersInTurn
 .replay(history)
 
-playersMayAlways
+playersMayAlwaysMove(allowed-selector)
 implement play() in tic-tac-toe and numberGuesser
 history-write
 reload=from-history
 rseed
 
-movex [el1, el2, el3]
-movey [el1, el2] [space1, space2]
-movez boolean
+moves are:
+  movex [el1, el2, el3]
+  movey [el1, el2] [space1, space2]
+  movez boolean
 
-el1 -> ctx-menu [movex, movey] -> [space1, space2]
-el3 click
-'movez' button
+sends: {
+  movex: [$el1, $el2, $el3],
+  movey: [$el1, $el2],
+  movez: 'movez',
+}
+
+appears as:
+  el1 -> ctx-menu [movex, movey] -> [space1, space2]
+  el3 click
+  'movez' button
+
+2nd send: {
+  movey: [$el1, [$space1, $space2]]
+}
+
 
 confirmation step required per move?
 
