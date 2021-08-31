@@ -240,7 +240,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     }
 
     const session = await sessionUser.getSession()
-    const locks = []
+    let locks = []
     let lastPlayerView = null
 
     const sendPlayerView = async jsonData => {
@@ -251,8 +251,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     }
 
     const sendPlayerLocks = async () => {
-      const locks = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
-      ws.send(JSON.stringify({type: 'updateLocks', payload: locks}))
+      const payload = await session.getElementLocks().map(lock => ({user: lock.userId, key: lock.element}))
+      ws.send(JSON.stringify({type: 'updateLocks', payload}))
     }
 
     const publish = async message => redisClient.publish(gameRunner.sessionEventKey(session.id), JSON.stringify(message))
@@ -275,13 +275,19 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     const releaseLock = async (key) => {
       await db.ElementLock.destroy({where: { sessionId: session.id, userId: sessionUser.userId, element: key }})
+      locks = locks.filter(lock => lock.key != key)
       await publish({type: 'locks'})
     }
 
     const drag = async ({key, x, y}) => {
-      const lock = locks.find(lock => lock.key == key)
-      if (!lock || lock.user != sessionUser.userId) return
-      await publish({type: 'drag', user: lock.user, key, x, y})
+      const lock = locks.find(lock => lock.element == key)
+      if (!lock || lock.userId != sessionUser.userId) return
+      await publish({type: 'drag', payload: {userId: lock.userId, key, x, y}})
+    }
+
+    const updateElement = ({userId, key, x, y}) => {
+      if (userId == sessionUser.userId) return
+      ws.send(JSON.stringify({type: 'updateElement', payload: {key, x, y}}))
     }
 
     gameRunner.startSession(session.id).catch(error => {
@@ -293,7 +299,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data)
-        console.log(`S ${req.userId}: ws message`, message)
+        console.log(`S ${req.userId}: ws message`, message.type)
         switch(message.type) {
           case 'requestLock': return await requestLock(message.payload.key)
           case 'releaseLock': return await releaseLock(message.payload.key)
@@ -321,8 +327,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       switch (message.type) {
         case 'state': return await sendPlayerView(data)
         case 'locks': return await sendPlayerLocks()
-          //case 'action': return await executeAction()
-          //case 'drag': return await updateElement(message)
+        case 'drag': return await updateElement(message.payload)
         default: return ws.send(data)
       }
     })

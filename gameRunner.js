@@ -21,7 +21,7 @@ class GameRunner {
     if (this.runningSessionIds.has(sessionId)) return
     this.runningSessionIds.add(sessionId)
 
-    const lockLeaseTime = 20000
+    const lockLeaseTime = 6000
     const sessionLockKey = `session-lock-${sessionId}`
     const redlockClient = redis.createClient(this.redisUrl)
     const redlock = new Redlock(
@@ -30,7 +30,8 @@ class GameRunner {
       [redlockClient],
       {
         driftFactor: 0.01,
-        retryCount: 0, // don't retry
+        retryCount: 10,
+        retryDelay: 1000,
       }
     )
 
@@ -105,18 +106,19 @@ class GameRunner {
         }
 
         while (this.runningSessionIds.has(sessionId)) {
-          let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
+          let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 2000
           while (timeRemaining > 0) {
             const client = asyncRedis.decorate(await this.redisClient.duplicate())
             const data = await client.blpop(this.sessionEventKey(sessionId), timeRemaining)
             processGameEvent(JSON.parse(data[1]))
-            timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 1000
+            timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - 2000
           }
           lock = await lock.extend(lockLeaseTime)
           lastLockTime = new Date().getTime()
         }
       } catch (e) {
-        console.error("ERROR IN GAME RUNNER LOOP", e)
+        console.error(`${process.pid} ERROR IN GAME RUNNER LOOP`, e)
+        throw e
       } finally {
         if (lock && lock.release) await lock.release()
       }
