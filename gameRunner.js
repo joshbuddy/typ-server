@@ -30,8 +30,7 @@ class GameRunner {
       [redlockClient],
       {
         driftFactor: 0.01,
-        retryCount: 10,
-        retryDelay: 1000,
+        retryCount: 0, // don't retry
       }
     )
 
@@ -117,8 +116,12 @@ class GameRunner {
           lastLockTime = new Date().getTime()
         }
       } catch (e) {
-        console.error(`${process.pid} ERROR IN GAME RUNNER LOOP`, e)
-        throw e
+        if (e instanceof Redlock.LockError) {
+          console.error(`${process.pid} waiting for lock...`)
+          await new Promise(resolve => setTimeout(resolve, 5000))
+        } else {
+          console.error(`${process.pid} ERROR IN GAME RUNNER LOOP`, e)
+        }
       } finally {
         if (lock && lock.release) await lock.release()
       }
