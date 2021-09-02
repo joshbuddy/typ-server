@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon run.js",
-    "test": "NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
+    "start": "DATABASE_URL=postgres://typ:typ@127.0.0.1/typ_development nodemon run.js",
+    "test": "DATABASE_URL=postgres://typ:typ@127.0.0.1/typ_test NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
     "build": "webpack",
     "lint": "eslint ."
   },
@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "adm-zip": "^0.4.13",
+    "advisory-lock": "^1.1.1",
     "async-redis": "^2.0.0",
     "bcrypt": "^3.0.6",
     "cookie-parser": "^1.4.5",

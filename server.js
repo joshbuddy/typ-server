@@ -27,7 +27,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     webpackCompiler = webpack(path.join(devGame.path, 'client/index.js'))
   }
 
-  const gameRunner = new GameRunner(redisUrl, localDevGame)
+  const postgresUrl = process.env['DATABASE_URL']
+  const gameRunner = new GameRunner(postgresUrl, redisUrl, localDevGame)
 
   app.set('view engine', 'ejs')
   app.set('views', __dirname + '/views')
