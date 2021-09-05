@@ -28,8 +28,8 @@ const config = {
         loader: 'babel-loader',
         options: {
           "presets": [
-            "@babel/preset-env",
-            "@babel/preset-react"
+            path.resolve(__dirname, 'node_modules/@babel/preset-env'),
+            path.resolve(__dirname, 'node_modules/@babel/preset-react'),
           ]
         },
       },
@@ -46,6 +46,11 @@ const config = {
 
   resolve: {
     extensions: ['*', '.js', '.jsx'],
+  },
+  resolveLoader: {
+    modules: [
+      path.resolve(__dirname, 'node_modules'),
+    ],
   },
 };
 

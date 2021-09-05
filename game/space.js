@@ -1,6 +1,6 @@
 const GameElement = require('./element');
 const Piece = require('./piece');
-const { times } = require('./utils');
+const { times } = require("./utils");
 const jsdom = require("jsdom");
 const { JSDOM } = jsdom;
 
@@ -15,13 +15,13 @@ class Space extends GameElement {
   findNode(q = '*') {
     if (q === null) return null;
     //if (q instanceof Node) return q;
-    return (this.boardNode() === this.node ? this.doc : this.node).querySelector(this._enhanceQuery(q));
+    return this.node.querySelector(this._enhanceQuery(q));
   }
 
   findNodes(q = '*') {
     if (q === null) return [];
     //if (q instanceof NodeList) return q;
-    return (this.boardNode() === this.node ? this.doc : this.node).querySelectorAll(this._enhanceQuery(q));
+    return this.node.querySelectorAll(this._enhanceQuery(q));
   }
 
   empty(q) {
@@ -122,7 +122,7 @@ class Space extends GameElement {
 
   addPiece(name, type, attrs) {
     if (this.node === this.boardNode()) {
-      return this.pile().addPiece(name, type, attrs);
+      return this.pile().addPiece(name, type, attrs); // is this really better???
     }
     this.addGameElement(name, type, 'piece', attrs);
   }

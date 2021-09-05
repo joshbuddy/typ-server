@@ -44,9 +44,10 @@ class GameRunner {
         const game = session.gameId === -1 ? this.localDevGame : await session.getGame()
         const gameInstance = new GameInterface()
         const playerViews = {}
+        const utils = require("./utils")
         const vm = new NodeVM({
           console: 'inherit',
-          sandbox: {game: gameInstance},
+          sandbox: {game: gameInstance, utils},
           require: {
             external: true,
           },

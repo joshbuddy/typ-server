@@ -28,11 +28,19 @@ class GameElement {
   }
 
   get(name) {
-    return this.attributes()[name];
+    try {
+      return JSON.parse(this.attributes()[name]);
+    } catch(e) {
+      return this.attributes()[name];
+    }
   }
 
   set(name, value) {
-    this.node.setAttribute(name, value);
+    if (value === false || value === "" || value === undefined) {
+      this.node.removeAttribute(name);
+    } else {
+      this.node.setAttribute(name, value);
+    }
   }
 
   player() {
@@ -47,10 +55,11 @@ class GameElement {
     return this.node.matches(q);
   }
 
+  // return full path to element, e.g. "2-1-3"
   branch() {
     const branch = [];
     let node = this.node;
-    while (node.parentNode) {
+    while (node.parentNode && node.parentNode.nodeName.toLowerCase() != 'game') {
       branch.unshift(Array.from(node.parentNode.childNodes).indexOf(node) + 1);
       node = node.parentNode;
     }
@@ -89,16 +98,16 @@ class GameElement {
     return node && node.className === 'piece';
   }
 
+  // return string representation, e.g. "$el(2-1-3)"
   serialize() {
-    return `GameElement(${this.branch.join('-')})`;
+    return `$el(${this.branch().join('-')})`;
   }
 
+  // return element from branch
   pieceAt(key) {
-    return GameElement.deserialize(this.board(), key.split('-'));
-  }
-
-  static deserialize(doc, args) {
-    return doc.find(args.reduce((path, index) => `${path} > *:nth-child(${index})`, 'game'));
+    return this.board().find(
+      key.split('-').reduce((path, index) => `${path} > *:nth-child(${index})`, 'board')
+    );
   }
 
   toString() {

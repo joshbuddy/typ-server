@@ -1,4 +1,5 @@
 const GameDocument = require('./document')
+const GameElement = require('./element')
 const EventEmitter = require('events')
 
 class GameInterface extends EventEmitter {
@@ -8,11 +9,13 @@ class GameInterface extends EventEmitter {
     this.phase = 'setup'
     this.hiddenKeys = []
     this.variables = {}
+    this.allowedMoveElements = ''
     this.doc = new GameDocument(null, this)
     this.board = this.doc.board()
-    this.pile = this.doc.pile() 
+    this.pile = this.doc.pile()
   }
 
+  // start game from scratch and run history. returns when game is done
   async start(history) {
     if (this.players.length < this.minPlayers) throw Error("not enough players")
     if (this.phase !== 'setup') throw Error("not ready to start")
@@ -29,8 +32,10 @@ class GameInterface extends EventEmitter {
     this.updatePlayer() // final game state with no actions allowed
   }
 
+  // add player to game
   addPlayer(userId) {
     if (this.players.includes(userId)) return
+    if (this.phase !== 'setup') throw Error("not able to add players while playing")
     if (this.players.length == this.maxPlayers) throw Error("game already full")
     this.players.push(userId)
     this.player = this.players.indexOf(this.userId)
@@ -40,6 +45,7 @@ class GameInterface extends EventEmitter {
     return this.players
   }
 
+  // send current player state along with allowed actions
   updatePlayer(allowedActions, forPlayer) {
     if (this.sequence <= this.lastReplaySequence) return
     console.log('I: allowedActions', forPlayer, this.players)
@@ -96,13 +102,41 @@ class GameInterface extends EventEmitter {
       this.currentPlayer = state.currentPlayer
       this.phase = state.phase
       this.doc.node.innerHTML = state.doc
+      this.board = this.doc.board()
+      this.pile = this.doc.pile()
     }
     return true
   }
 
+  serialize(value) {
+    try {
+      if (value instanceof Array) return value.map(v => this.serialize(v))
+      if (value && value.serialize) {
+        return value.serialize()
+      }
+      return JSON.stringify(value)
+    } catch(e) {
+      console.error("unable to serialize", value)
+      throw e
+    }
+  }
+
+  deserialize(value) {
+    try {
+      if (value instanceof Array) return value.map(v => this.deserialize(v))
+      if (value.slice && value.slice(0,4) == '$el(') {
+        return this.board.pieceAt(value.slice(4,-1));
+      }
+      return JSON.parse(value)
+    } catch(e) {
+      console.error("unable to deserialize", value)
+      throw e
+    }
+  }
+
   getPlayerView(player, allowedActions) {
     const playerView = this.doc.clone()
-    playerView.findNodes(this.hidden(player)).forEach(n => n.replaceWith(document.createElement(n.nodeName)))
+    playerView.findNodes(this.hidden(player)).forEach(n => n.replaceWith(this.doc.document.createElement(n.nodeName)))
     return {
       variables: this.shownVariables(),
       phase: this.phase,
@@ -111,6 +145,7 @@ class GameInterface extends EventEmitter {
       sequence: this.sequence,
       board: playerView.boardNode().outerHTML,
       pile: this.doc.pileNode().outerHTML,
+      allowedMove: this.allowedMoveElements,
       allowedActions,
     }
   }
@@ -119,16 +154,18 @@ class GameInterface extends EventEmitter {
     return null
   }
 
+  // wait for an action from list of actions from current player
   async currentPlayerPlay(actions) {
     return await this.playerPlay(actions, this.currentPlayer)
   }
 
+  // wait for an action from list of actions from any player
   async anyPlayerPlay(actions) {
     return await this.playerPlay(actions)
   }
 
   async playerPlay(actions, player) {
-    actions = actions.includes ? actions : [actions]
+    actions = actions instanceof Array ? actions : [actions]
     return await this.waitForAction(actions, player)
   }
 
@@ -146,19 +183,12 @@ class GameInterface extends EventEmitter {
     })
   }
 
+  // allow movement of pieces by players if match the given selector
   playersMayAlwaysMove(selector) {
     this.allowedMoveElements = selector
-    this.emit('update', {
-      type: 'allowedMove',
-      payload: selector
-    })
   }
 
-  playersMayNoLonger(moves) {
-    moves = moves.includes ? moves : [moves]
-    this.freeMoves = this.freeMoves.filter(move => !moves.includes(move))
-  }
-
+  // test list of actions for validity and options, returns object of choices available
   optionsFromActions(actions) {
     return actions.reduce((options, action) => {
       const result = this.testAction(action, [])
@@ -172,20 +202,8 @@ class GameInterface extends EventEmitter {
     }, {})
   }
 
-  // given a set of actions, return a mapping of board choices to each action
-  /* optionsFromActions(actions) {
-   *   return actions.reduce((options, action) => {
-   *     const result = this.testAction(action, [])
-   *     if (result === false) return
-   *     if (result === true) {
-   *       options[action.name] = action.name
-   *     } else {
-   *       result.forEach(option => options[option] = action.name)
-   *     }
-   *     return options
-   *   }, {})
-   * } */
-
+  // test a given action and args for results
+  // (true = success; false = invalid; array = additional choice required)
   testAction(action, args) {
     const state = this.getState()
     const result = action(...args)
@@ -193,10 +211,24 @@ class GameInterface extends EventEmitter {
     return result
   }
 
+  // takes choices, validChoices and resultant action and returns an action that requires a choice from validChoices
+  choose(choice, validChoices, action, prompt) {
+    const choices = this.serialize(validChoices)
+    if (choice === undefined) return choices
+    if (!choices.includes(this.serialize(choice))) {
+      return false
+    }
+    try {
+      action()
+    } catch(e) {
+      console.error(`Failed to run ${prompt} with ${choice}`, e)
+      return false
+    }
+    return true
+  }
+
   replay(actions) {
-    actions.forEach(action => setImmediate(() => {
-      this.emit('action', false, ...action)
-    }))
+    actions.forEach(action => setImmediate(() => this.emit('action', false, ...action)))
   }
 
   receiveAction(userId, sequence, action, ...args) {
@@ -221,11 +253,12 @@ class GameInterface extends EventEmitter {
       }
       this.on('action', (realtime, player, sequence, action, ...args) => {
         console.log(`I: got action (${player}, ${action}, ${args})`)
+        const deserializedArgs = this.deserialize(args)
         if (action == 'moveElement') {
           try {
             if (realtime) this.registerAction(player, sequence, ['moveElement', ...args])
             this.sequence++;
-            this.moveElement(...args)
+            this.moveElement(...deserializedArgs)
             this.updatePlayer(this.optionsFromActions(actions), fromPlayer)
           } catch(e) {
             console.error("unable to register action", e)
@@ -235,7 +268,7 @@ class GameInterface extends EventEmitter {
           const allowedAction = actions.find(a => a.name == action)
           console.log('I try resolve with', allowedAction, `${fromPlayer}==${player}, ${sequence}==${this.sequence}`)
           if ((fromPlayer === undefined || player === fromPlayer) && allowedAction && this.sequence === sequence) {
-            const result = allowedAction(...args)
+            const result = allowedAction(...deserializedArgs)
             console.log('I result', result)
             if (result === true) {
               try {
@@ -243,7 +276,7 @@ class GameInterface extends EventEmitter {
                 if (realtime) this.registerAction(player, sequence, [action, ...args])
                 this.sequence++;
                 this.removeAllListeners('action')
-                resolve([action, ...args])
+                resolve([action, ...deserializedArgs])
               } catch(e) {
                 console.error("unable to register action", e)
                 // UNDO?
@@ -252,7 +285,7 @@ class GameInterface extends EventEmitter {
             if (result === false) {
               // illegal action
             }
-            if (result.includes) {
+            if (result instanceof Array) {
               this.updatePlayer({[action]: [...args, result]})
             }
           }
@@ -273,13 +306,12 @@ class GameInterface extends EventEmitter {
     this.currentPlayer = (this.currentPlayer + 1) % this.players.length
   }
 
-  moveElement(key, x, y) {
-    const el = this.board.pieceAt(key)
+  moveElement(el, x, y) {
     if (el.matches(this.allowedMoveElements)) {
       el.set('x', x)
       el.set('y', y)
     } else {
-      console.error("Illegal moveElement", el.node.outerHTML, el.doc.innerHTML, this.allowedMoveElements)
+      console.error("Illegal moveElement", el.node.outerHTML, this.allowedMoveElements)
     }
   }
 }
