@@ -93,7 +93,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     const name = req.body.name || ''
     const password = req.body.password || ''
     const user = await db.User.findOne({ where: {name} })
-    if (!user) return unauthorized(req, res, res, 'incorrect login')
+    if (!user) return unauthorized(req, res, 'incorrect login')
     const correctPassword = await bcrypt.compare(password, user.password)
     if (!correctPassword) return unauthorized(req, res, 'incorrect login')
     const token = jwt.sign({id: user.id}, secretKey)
