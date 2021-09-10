@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon run.js",
-    "test": "NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
+    "start": "DATABASE_URL=postgres://typ:typ@127.0.0.1/typ_development nodemon run.js",
+    "test": "DATABASE_URL=postgres://typ:typ@127.0.0.1/typ_test NODE_ENV=test ./node_modules/mocha/bin/mocha --exit",
     "build": "webpack",
     "lint": "eslint ."
   },
