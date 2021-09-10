@@ -25,8 +25,12 @@ class GameRunner {
     this.runningSessionIds.add(sessionId)
 
     const lockClient = new Client(this.postgresUrl)
+    const queueClient = asyncRedis.decorate(await this.redisClient.duplicate())
     try {
       await lockClient.connect()
+      lockClient.on('error', (err) => {
+        queueClient.end()
+      })
       const lockLeaseTime = 5000
       const closeOutTime = 1000
       await lockClient.query("select pg_advisory_lock($1, $2)", [GAME_SESSION_NS, sessionId])
@@ -99,15 +103,9 @@ class GameRunner {
             }
           }
 
-          const queueClient = asyncRedis.decorate(await this.redisClient.duplicate())
           while (this.runningSessionIds.has(sessionId)) {
-            let timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - closeOutTime
-            while (timeRemaining > 0) {
-              const data = await queueClient.blpop(this.sessionEventKey(sessionId), timeRemaining)
-              processGameEvent(JSON.parse(data[1]))
-              timeRemaining = lockLeaseTime - (new Date().getTime() - lastLockTime) - closeOutTime
-            }
-            lastLockTime = new Date().getTime()
+            const data = await queueClient.blpop(this.sessionEventKey(sessionId), 5000)
+            processGameEvent(JSON.parse(data[1]))
           }
           await queueClient.end()
 
@@ -119,7 +117,13 @@ class GameRunner {
       try {
         await lockClient.end()
       } catch (e) {
-        console.log("error ending client", e)
+        console.log("error ending lock client", e)
+      }
+
+      try {
+        await queueClient.end()
+      } catch (e) {
+        console.log("error ending queue client", e)
       }
     }
   }
