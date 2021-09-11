@@ -114,6 +114,11 @@ class GameRunner {
       }
     } finally {
       try {
+        await lockClient.query("select pg_advisory_unlock($1, $2)", [GAME_SESSION_NS, sessionId])
+      } catch (e) {
+        console.log("error unlocking", e)
+      }
+      try {
         await lockClient.end()
       } catch (e) {
         console.log("error ending lock client", e)
