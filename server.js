@@ -27,7 +27,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
     webpackCompiler = webpack(path.join(devGame.path, 'client/index.js'))
   }
 
-  const gameRunner = new GameRunner(redisUrl, localDevGame)
+  const postgresUrl = process.env['DATABASE_URL']
+  const gameRunner = new GameRunner(postgresUrl, redisUrl, localDevGame)
 
   app.set('view engine', 'ejs')
   app.set('views', __dirname + '/views')
@@ -332,17 +333,15 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       }
     })
 
-    ws.on("close", () => {
-      subscriber.unsubscribe()
-      subscriber.quit()
-      gameRunner.stopSession(session.id)
+    ws.on("close", async () => {
+      await subscriber.end()
+      await gameRunner.stopSession(session.id)
     })
 
-    ws.on("error", error => {
-      subscriber.unsubscribe()
-      subscriber.quit()
-      gameRunner.stopSession(session.id)
-      throw error
+    ws.on("error", async error => {
+      await subscriber.end()
+      await gameRunner.stopSession(session.id)
+      console.error("error in ws", error)
     })
   }
   wss.on("connection", onWssConnection)
