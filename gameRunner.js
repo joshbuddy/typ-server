@@ -13,6 +13,7 @@ class GameRunner {
     this.localDevGame = localDevGame
     this.runningSessionIds = new Set()
     this.redisClient = asyncRedis.createClient(redisUrl)
+    this.queueClients = {}
   }
 
   sessionEventKey(sessionId) {
@@ -25,14 +26,12 @@ class GameRunner {
     this.runningSessionIds.add(sessionId)
 
     const lockClient = new Client(this.postgresUrl)
-    const queueClient = asyncRedis.decorate(await this.redisClient.duplicate())
+    this.queueClients[sessionId] = asyncRedis.decorate(await this.redisClient.duplicate())
     try {
       await lockClient.connect()
       lockClient.on('error', (err) => {
-        queueClient.end()
+        this.queueClients[sessionId].end()
       })
-      const lockLeaseTime = 5000
-      const closeOutTime = 1000
       await lockClient.query("select pg_advisory_lock($1, $2)", [GAME_SESSION_NS, sessionId])
 
       while(this.runningSessionIds.has(sessionId)) {
@@ -104,10 +103,10 @@ class GameRunner {
           }
 
           while (this.runningSessionIds.has(sessionId)) {
-            const data = await queueClient.blpop(this.sessionEventKey(sessionId), 5000)
+            const data = await this.queueClients[sessionId].blpop(this.sessionEventKey(sessionId), 5000)
             processGameEvent(JSON.parse(data[1]))
           }
-          await queueClient.end()
+          await this.queueClients[sessionId].end()
 
         } catch (e) {
           console.error(`${process.pid} ERROR IN GAME RUNNER LOOP`, e)
@@ -121,7 +120,7 @@ class GameRunner {
       }
 
       try {
-        await queueClient.end()
+        await this.queueClients[sessionId].end()
       } catch (e) {
         console.log("error ending queue client", e)
       }
@@ -130,6 +129,12 @@ class GameRunner {
 
   async stopSession(sessionId) {
     this.runningSessionIds.delete(sessionId)
+    try {
+      await this.queueClients[sessionId].end()
+    } catch (e) {
+      console.error("error stopping queue client")
+    }
+    delete this.queueClients[sessionId]
   }
 }
 

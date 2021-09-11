@@ -333,17 +333,15 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       }
     })
 
-    ws.on("close", () => {
-      subscriber.unsubscribe()
-      subscriber.quit()
-      gameRunner.stopSession(session.id)
+    ws.on("close", async () => {
+      await subscriber.end()
+      await gameRunner.stopSession(session.id)
     })
 
-    ws.on("error", error => {
-      subscriber.unsubscribe()
-      subscriber.quit()
-      gameRunner.stopSession(session.id)
-      throw error
+    ws.on("error", async error => {
+      await subscriber.end()
+      await gameRunner.stopSession(session.id)
+      console.error("error in ws", error)
     })
   }
   wss.on("connection", onWssConnection)
