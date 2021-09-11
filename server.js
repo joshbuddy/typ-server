@@ -329,6 +329,7 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
         case 'state': return await sendPlayerView(data)
         case 'locks': return await sendPlayerLocks()
         case 'drag': return await updateElement(message.payload)
+        case 'ping': return ws.send(JSON.stringify({type: "pong"}))
         default: return ws.send(data)
       }
     })
