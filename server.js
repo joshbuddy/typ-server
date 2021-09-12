@@ -291,7 +291,8 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
       ws.send(JSON.stringify({type: 'updateElement', payload: {key, x, y}}))
     }
 
-    gameRunner.startSession(session.id).catch(error => {
+    const sessionRunner = gameRunner.createSessionRunner(session.id)
+    sessionRunner.once('error', error => {
       console.error("error starting session!", error)
       return ws.close(1011) // internal error
     })
@@ -336,12 +337,12 @@ module.exports = ({secretKey, redisUrl, ...devGame }) => {
 
     ws.on("close", async () => {
       await subscriber.end()
-      await gameRunner.stopSession(session.id)
+      await sessionRunner.stop()
     })
 
     ws.on("error", async error => {
       await subscriber.end()
-      await gameRunner.stopSession(session.id)
+      await sessionRunner.stop()
       console.error("error in ws", error)
     })
   }
