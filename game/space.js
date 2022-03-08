@@ -7,7 +7,7 @@ const { JSDOM } = jsdom;
 class Space extends GameElement {
 
   _enhanceQuery(q) {
-    return q.replace('.mine', `[player="${this.game.player}"]`)
+    return q.replace('.mine', `[player="${this.game.currentPlayer}"]`)
             .replace(/#(\d)/, '#\\3$1 ')
             .replace(/([#=])(\d)/, '$1\\3$2 ');
   }
@@ -113,22 +113,22 @@ class Space extends GameElement {
   }
 
   addSpace(name, type, attrs) {
-    this.addGameElement(name, type, 'space', attrs);
+    return this.addGameElement(name, type, 'space', attrs);
   }
 
   addSpaces(num, name, type, attrs) {
-    times(num).forEach(() => this.addSpace(name, type, attrs));
+    return times(num).map(() => this.addSpace(name, type, attrs));
   }
 
   addPiece(name, type, attrs) {
     if (this.node === this.boardNode()) {
       return this.pile().addPiece(name, type, attrs); // is this really better???
     }
-    this.addGameElement(name, type, 'piece', attrs);
+    return this.addGameElement(name, type, 'piece', attrs);
   }
 
   addPieces(num, name, type, attrs) {
-    times(num).forEach(() => this.addPiece(name, type, attrs));
+    return times(num).map(() => this.addPiece(name, type, attrs));
   }
 
   addGameElement(name, type, className, attrs = {}) {
@@ -139,6 +139,7 @@ class Space extends GameElement {
     el.className = className;
     Object.keys(attrs).forEach(attr => el.setAttribute(attr, attrs[attr]));
     this.node.appendChild(el);
+    return this.wrap(this.node.lastChild);
   }
 }
 

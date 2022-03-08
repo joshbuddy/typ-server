@@ -22,6 +22,6 @@ class GameDocument extends Space {
   }
 }
 
-GameElement.wrapNodeAs(0, GameDocument, node => !node.parentNode);
+GameElement.wrapNodeAs(0, GameDocument, node => !node.parentNode.parentNode);
 
 module.exports = GameDocument
