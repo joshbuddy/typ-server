@@ -5,7 +5,7 @@ class GameElement {
     this.node = node;
     this.doc = caller.doc;
     this.game = caller.game;
-    this.id = node.id;
+    this.id = node.id; // TODO reserved id's? game, board...
     this.type = node.nodeName.toLowerCase();
   }
 
@@ -59,14 +59,14 @@ class GameElement {
   branch() {
     const branch = [];
     let node = this.node;
-    while (node.parentNode && node.parentNode.nodeName.toLowerCase() != 'game') {
+    while (node.parentNode) {
       branch.unshift(Array.from(node.parentNode.childNodes).indexOf(node) + 1);
       node = node.parentNode;
     }
     return branch;
   }
 
-  doc() {
+  root() {
     return this.wrap(this.doc);
   }
 
@@ -87,7 +87,15 @@ class GameElement {
   }
 
   place(pieces, to, opts = {}) {
-    return this.doc.find('#PILE').move(pieces, to, Object.assign({ limit: 1, within: this.node }, opts));
+    return this.root().find('#PILE').move(pieces, to, Object.assign({ limit: 1, within: this.node }, opts));
+  }
+
+  duplicate() {
+    return this.wrap(this.node.parentNode.appendChild(this.node.cloneNode(true)))
+  }
+
+  destroy() {
+    this.node.parentNode.removeChild(this.node)
   }
 
   static isSpaceNode(node) {
@@ -105,8 +113,8 @@ class GameElement {
 
   // return element from branch
   pieceAt(key) {
-    return this.board().find(
-      key.split('-').reduce((path, index) => `${path} > *:nth-child(${index})`, 'board')
+    return this.root().find(
+      key.split('-').map(index => `*:nth-child(${index})`).join(' > ')
     );
   }
 
